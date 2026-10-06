@@ -227,7 +227,7 @@ flags in either mode.
 \*\*\* Required when `--db-type=postgres`
 
 For global flags that apply to all tasks (`--cluster-name`, `--cluster-type`,
-`--kubeconfig`, `--insecure-tls`, `--parallel`, `--artifacts-dir`),
+`--kubeconfig`, `--insecure-tls`, `--parallel`, `--tar-artifacts`, `--artifacts-dir`),
 see [Global CLI Flags](getting-started.md#step-2-choose-how-to-run).
 
 ## Dynamic CPU IDs from PerformanceProfile CRs
