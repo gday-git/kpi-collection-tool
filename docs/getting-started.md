@@ -101,6 +101,7 @@ See [Prometheus KPI Configuration](kpis-file-configuration.md) for the full file
 | `--once`            | No       | false                        | With `--prom-kpis-config` only: collect all KPIs once and exit (mutually exclusive with `--tasks`, `--frequency`, `--duration`) |
 | `--parallel`        | No       | false                        | Run tasks concurrently (also settable via `orchestration.mode` in a tasks file)                                |
 | `--insecure-tls`    | No       | false                        | Skip TLS certificate verification (dev/lab clusters with self-signed certs)                                    |
+| `--tar-artifacts`   | No       | false                        | Create a `.tar.gz` archive of the artifacts directory after the run completes                                  |
 | `--artifacts-dir`   | No       | `./kpi-collector-artifacts/` | Directory for database, logs, and output files                                                                 |
 
 \* Required for non-Prometheus tasks; for Prometheus-only, can use `--token` + `--thanos-url` instead

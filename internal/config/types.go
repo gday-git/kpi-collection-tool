@@ -136,6 +136,7 @@ type InputFlags struct {
 	SingleRun      bool   // collect metrics once and exit
 	Parallel       bool   // run tasks concurrently instead of sequentially
 	SkipPrompts    bool   // skip interactive prompts (--yes/-y)
+	TarArtifacts   bool   // create .tar.gz of artifacts dir after run
 }
 
 // HasAnyTaskConfig returns true if at least one task config flag is set.

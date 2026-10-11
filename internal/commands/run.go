@@ -120,6 +120,10 @@ func init() {
 	runCmd.Flags().BoolVarP(&flags.SkipPrompts, "yes", "y", false,
 		"skip interactive prompts (e.g. category advisory)")
 
+	// Post-run archiving
+	runCmd.Flags().BoolVar(&flags.TarArtifacts, "tar-artifacts", false,
+		"create a .tar.gz archive of the artifacts directory after the run completes")
+
 	// Mark required flags
 	if err := runCmd.MarkFlagRequired("cluster-name"); err != nil {
 		panic(fmt.Sprintf("failed to mark cluster-name as required: %v", err))
@@ -207,6 +211,14 @@ func runTasks(cmd *cobra.Command, args []string) error {
 		absOutputDir = database.OutputDir
 	}
 	fmt.Printf("Artifacts stored in: %s\n", absOutputDir)
+
+	if flags.TarArtifacts {
+		tarPath, tarErr := tarArtifactsDir(database.OutputDir)
+		if tarErr != nil {
+			return fmt.Errorf("failed to archive artifacts: %w", tarErr)
+		}
+		fmt.Printf("Artifacts archive: %s\n", tarPath)
+	}
 
 	if len(failedTasks) > 0 {
 		return fmt.Errorf("tasks failed: %s", strings.Join(failedTasks, ", "))

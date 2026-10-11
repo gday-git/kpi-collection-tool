@@ -43,6 +43,7 @@ disable-model-invocation: false
 | `--postgres-url` | No | — | Required when `--db-type=postgres` |
 | `--insecure-tls` | No | `false` | Skip TLS verification |
 | `--yes` / `-y` | No | `false` | Skip interactive prompts (e.g. category advisory) |
+| `--tar-artifacts` | No | `false` | Create a `.tar.gz` archive of the artifacts directory after the run completes |
 
 *Either `--kubeconfig` or both `--token` + `--thanos-url` are required.
 
