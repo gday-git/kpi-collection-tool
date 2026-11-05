@@ -12,6 +12,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -35,20 +36,30 @@ const (
 
 // setupPromClient creates and configures a Prometheus API client.
 // prometheusURL may include a scheme (http:// or https://); if omitted, https:// is assumed.
-func setupPromClient(prometheusURL, bearerToken string, insecureTLS bool) (promv1.API, error) {
+// proxyURL, when non-empty, routes queries through the given proxy (http/https/socks5).
+func setupPromClient(prometheusURL, bearerToken, proxyURL string, insecureTLS bool) (promv1.API, error) {
 	address := prometheusURL
 	if !strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://") {
 		address = "https://" + address
+	}
+
+	// TLSClientConfig is only relevant for HTTPS; for plain HTTP, Go ignores it.
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureTLS},
+	}
+	if proxyURL != "" {
+		u, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", proxyURL, err)
+		}
+		transport.Proxy = http.ProxyURL(u)
 	}
 
 	client, err := api.NewClient(api.Config{
 		Address: address,
 		RoundTripper: &tokenRoundTripper{
 			Token: bearerToken,
-			// TLSClientConfig is only relevant for HTTPS; for plain HTTP, Go ignores it.
-			RT: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureTLS},
-			},
+			RT:    transport,
 		},
 	})
 	if err != nil {
@@ -75,7 +86,7 @@ func RunQueries(db *sql.DB, dbImpl database.Database, kpisToRun config.KPIs, fla
 	}
 
 	// Create Prometheus client
-	v1api, err := setupPromClient(flags.ThanosURL, flags.BearerToken, flags.InsecureTLS)
+	v1api, err := setupPromClient(flags.ThanosURL, flags.BearerToken, flags.ProxyURL, flags.InsecureTLS)
 	if err != nil {
 		return fmt.Errorf("failed to create client: %v", err)
 	}

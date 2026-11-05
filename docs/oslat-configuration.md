@@ -73,6 +73,8 @@ oslat:
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `timeout` | Yes | — | Maximum time to wait for the pod to complete. If the pod is still running when the timeout expires, the task collects whatever logs are available and moves on. Accepts a Go duration string (e.g. `30m`, `1h`). |
+| `mountKubeconfig` | No | `false` | When `true`, the tool creates a Secret from the run's `--kubeconfig` and injects it (volume + read-only mount + `KUBECONFIG` env) into every container. Removes the need to pre-create a Secret or hand-write the volume. |
+| `mountPath` | No | `/kubeconfig` | Mount path for the injected kubeconfig (only used with `mountKubeconfig`). The file lands at `<mountPath>/kubeconfig` and `KUBECONFIG` is set to it. |
 | `pod` | Yes | — | A full Kubernetes Pod manifest (metadata + spec). This is the exact Pod that will be created on the cluster. |
 | `pod.metadata.name` | Yes | — | The Pod name. |
 | `pod.metadata.namespace` | No | cluster default | Namespace to create the pod in. |
@@ -164,3 +166,36 @@ add matching tolerations to the pod spec.
 
 Requires `--kubeconfig` with admin privileges. The task creates a pod and reads
 its logs via the Kubernetes API.
+
+### Mounting a kubeconfig into the pod
+
+Some workloads (e.g. the Red Hat `cnf-tests` oslat harness) act as a client that
+talks to the cluster API from *inside* the pod, so they need a kubeconfig mounted
+in. Instead of running `oc create secret generic ... --from-file=kubeconfig=...`
+and wiring up the volume by hand, set `mountKubeconfig: true`:
+
+```yaml
+oslat:
+  timeout: 20m
+  mountKubeconfig: true        # tool creates the Secret and injects it
+  # mountPath: /kubeconfig     # optional; KUBECONFIG becomes <mountPath>/kubeconfig
+  pod:
+    metadata:
+      name: oslat-test
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: oslat
+          image: your-registry/cnf-tests-rhel9:v4.22
+          command: ["/usr/bin/test-run.sh"]
+          args: ["--ginkgo.v", "--ginkgo.focus=oslat"]
+```
+
+The tool creates a Secret named `<pod-name>-kubeconfig` from the run's
+`--kubeconfig`, mounts it read-only at `mountPath`, and sets `KUBECONFIG` on every
+container (an existing `KUBECONFIG` env is left untouched).
+
+> **Proxy note:** the mounted kubeconfig runs in-cluster, so it must **not**
+> contain a `proxy-url` pointing at a laptop-local proxy (it is unreachable from
+> the pod). Keep the kubeconfig proxy-free and pass the proxy to the tool with
+> `--proxy-url` instead.

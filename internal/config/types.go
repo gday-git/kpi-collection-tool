@@ -137,6 +137,7 @@ type InputFlags struct {
 	Parallel       bool   // run tasks concurrently instead of sequentially
 	SkipPrompts    bool   // skip interactive prompts (--yes/-y)
 	TarArtifacts   bool   // create .tar.gz of artifacts dir after run
+	ProxyURL       string // proxy URL for Thanos + Kubernetes API traffic (http/https/socks5); overrides kubeconfig proxy-url
 }
 
 // HasAnyTaskConfig returns true if at least one task config flag is set.

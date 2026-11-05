@@ -8,6 +8,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -24,6 +25,22 @@ func CreatePod(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod
 		return nil, fmt.Errorf("failed to create pod %s/%s: %w", pod.Namespace, pod.Name, err)
 	}
 	return created, nil
+}
+
+// CreateOrUpdateSecret creates the named secret, or updates it if it already exists.
+func CreateOrUpdateSecret(ctx context.Context, client kubernetes.Interface, namespace, name string, data map[string][]byte) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       data,
+	}
+	_, err := client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		_, err = client.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
+	}
+	if err != nil {
+		return fmt.Errorf("failed to create/update secret %s/%s: %w", namespace, name, err)
+	}
+	return nil
 }
 
 // PodWaitTick is called on each poll while waiting for a pod to finish.

@@ -227,8 +227,28 @@ flags in either mode.
 \*\*\* Required when `--db-type=postgres`
 
 For global flags that apply to all tasks (`--cluster-name`, `--cluster-type`,
-`--kubeconfig`, `--insecure-tls`, `--parallel`, `--tar-artifacts`, `--artifacts-dir`),
-see [Global CLI Flags](getting-started.md#step-2-choose-how-to-run).
+`--kubeconfig`, `--insecure-tls`, `--proxy-url`, `--parallel`, `--tar-artifacts`,
+`--artifacts-dir`), see [Global CLI Flags](getting-started.md#step-2-choose-how-to-run).
+
+## `--proxy-url`
+
+When the cluster is only reachable through a proxy (common in lab setups behind
+a bastion), pass it with `--proxy-url`. It routes **both** the Thanos query
+traffic and the Kubernetes API traffic (Thanos discovery, token creation, pod
+operations, PerformanceProfile CPU lookup) through the proxy. Supports `http`,
+`https`, and `socks5` schemes:
+
+```bash
+kpi-collector run --cluster-name my-cluster --cluster-type ran \
+  --kubeconfig ~/.kube/config \
+  --proxy-url socks5://127.0.0.1:1337 \
+  --prom-kpis-config kpis.yaml --once
+```
+
+`--proxy-url` overrides any `proxy-url` embedded in the kubeconfig. Prefer it over
+a kubeconfig `proxy-url` when you also run the oslat task with `mountKubeconfig`:
+the kubeconfig gets mounted into the pod, where a laptop-local proxy address is
+unreachable — so the kubeconfig must stay proxy-free.
 
 ## Dynamic CPU IDs from PerformanceProfile CRs
 

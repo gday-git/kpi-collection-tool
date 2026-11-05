@@ -78,17 +78,17 @@ var _ = Describe("FromPromKPIsFlag", func() {
 
 var _ = Describe("unimplemented task stubs", func() {
 	It("oslat is named", func() {
-		t := NewOslatTask(config.OslatTaskConfig{}, "kubeconfig", "/tmp")
+		t := NewOslatTask(config.OslatTaskConfig{}, "kubeconfig", "", "/tmp")
 		Expect(t.Name()).To(Equal(config.TaskConfigOslat))
 	})
 
 	It("per-node-data is named", func() {
-		t := NewPerNodeDataTask(config.PerNodeDataTaskConfig{}, "kubeconfig", "/tmp")
+		t := NewPerNodeDataTask(config.PerNodeDataTaskConfig{}, "kubeconfig", "", "/tmp")
 		Expect(t.Name()).To(Equal(config.TaskConfigPerNodeData))
 	})
 
 	It("app-recovery-time is named", func() {
-		t := NewAppRecoveryTimeTask(config.AppRecoveryTimeTaskConfig{}, "kubeconfig", "/tmp")
+		t := NewAppRecoveryTimeTask(config.AppRecoveryTimeTaskConfig{}, "kubeconfig", "", "/tmp")
 		Expect(t.Name()).To(Equal(config.TaskConfigAppRecoveryTime))
 	})
 })
