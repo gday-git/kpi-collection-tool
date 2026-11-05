@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"time"
 
 	authv1 "k8s.io/api/authentication/v1"
@@ -23,9 +25,10 @@ const (
 
 // SetupKubeconfigAuth sets up authentication using kubeconfig file,
 // discovers the Thanos URL, and creates a service account token
-// whose lifetime matches tokenDuration.
-func SetupKubeconfigAuth(kubeconfig string, tokenDuration time.Duration) (string, string, error) {
-	clientset, err := ClientsetFromKubeconfig(kubeconfig)
+// whose lifetime matches tokenDuration. proxyURL, when non-empty, routes
+// the API traffic through the given proxy (overriding any kubeconfig proxy-url).
+func SetupKubeconfigAuth(kubeconfig, proxyURL string, tokenDuration time.Duration) (string, string, error) {
+	clientset, err := ClientsetFromKubeconfig(kubeconfig, proxyURL)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to setup Kubernetes client: %v", err)
 	}
@@ -46,10 +49,21 @@ func SetupKubeconfigAuth(kubeconfig string, tokenDuration time.Duration) (string
 }
 
 // ClientsetFromKubeconfig builds a clientset from a kubeconfig file path.
-func ClientsetFromKubeconfig(kubeconfigPath string) (*kubernetes.Clientset, error) {
+// When proxyURL is non-empty, all API traffic is routed through it (overriding
+// any proxy-url set in the kubeconfig); an empty proxyURL leaves the kubeconfig's
+// own proxy settings untouched.
+func ClientsetFromKubeconfig(kubeconfigPath, proxyURL string) (*kubernetes.Clientset, error) {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load kubeconfig: %v", err)
+	}
+
+	if proxyURL != "" {
+		u, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", proxyURL, err)
+		}
+		config.Proxy = http.ProxyURL(u)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)

@@ -24,13 +24,14 @@ const (
 type AppRecoveryTimeTask struct {
 	cfg          config.AppRecoveryTimeTaskConfig
 	kubeconfig   string
+	proxyURL     string
 	artifactsDir string
 	cleanup      bool
 }
 
 // NewAppRecoveryTimeTask constructs an app-recovery-time task.
-func NewAppRecoveryTimeTask(cfg config.AppRecoveryTimeTaskConfig, kubeconfig, artifactsDir string) *AppRecoveryTimeTask {
-	return &AppRecoveryTimeTask{cfg: cfg, kubeconfig: kubeconfig, artifactsDir: artifactsDir}
+func NewAppRecoveryTimeTask(cfg config.AppRecoveryTimeTaskConfig, kubeconfig, proxyURL, artifactsDir string) *AppRecoveryTimeTask {
+	return &AppRecoveryTimeTask{cfg: cfg, kubeconfig: kubeconfig, proxyURL: proxyURL, artifactsDir: artifactsDir}
 }
 
 func (t *AppRecoveryTimeTask) Name() string { return config.TaskConfigAppRecoveryTime }
@@ -40,7 +41,7 @@ func (t *AppRecoveryTimeTask) Name() string { return config.TaskConfigAppRecover
 // duration. List/get failures are written to pod_status.out; the poll loop
 // continues until duration elapses. File write errors and Ctrl+C still fail.
 func (t *AppRecoveryTimeTask) Run(ctx context.Context) error {
-	client, err := kubernetes.ClientsetFromKubeconfig(t.kubeconfig)
+	client, err := kubernetes.ClientsetFromKubeconfig(t.kubeconfig, t.proxyURL)
 	if err != nil {
 		return fmt.Errorf("%s: %w", t.Name(), err)
 	}

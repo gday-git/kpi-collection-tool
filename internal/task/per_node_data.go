@@ -34,13 +34,14 @@ var collectScript string
 type PerNodeDataTask struct {
 	cfg          config.PerNodeDataTaskConfig
 	kubeconfig   string
+	proxyURL     string
 	artifactsDir string
 	cleanup      bool
 }
 
 // NewPerNodeDataTask constructs a per-node-data task.
-func NewPerNodeDataTask(cfg config.PerNodeDataTaskConfig, kubeconfig, artifactsDir string) *PerNodeDataTask {
-	return &PerNodeDataTask{cfg: cfg, kubeconfig: kubeconfig, artifactsDir: artifactsDir}
+func NewPerNodeDataTask(cfg config.PerNodeDataTaskConfig, kubeconfig, proxyURL, artifactsDir string) *PerNodeDataTask {
+	return &PerNodeDataTask{cfg: cfg, kubeconfig: kubeconfig, proxyURL: proxyURL, artifactsDir: artifactsDir}
 }
 
 func (t *PerNodeDataTask) Name() string { return config.TaskConfigPerNodeData }
@@ -51,7 +52,7 @@ func (t *PerNodeDataTask) Run(ctx context.Context) error {
 	}
 	log.Printf("%s: using isolcpus=%s", t.Name(), t.cfg.Isolcpus)
 
-	client, err := kubernetes.ClientsetFromKubeconfig(t.kubeconfig)
+	client, err := kubernetes.ClientsetFromKubeconfig(t.kubeconfig, t.proxyURL)
 	if err != nil {
 		return fmt.Errorf("%s: %w", t.Name(), err)
 	}

@@ -67,7 +67,7 @@ var _ = Describe("Kubernetes Client", func() {
 			nonExistentPath := filepath.Join(tmpDir, "nonexistent-kubeconfig")
 
 			By("We try to setup a Kubernetes client with invalid kubeconfig path")
-			clientset, err := ClientsetFromKubeconfig(nonExistentPath)
+			clientset, err := ClientsetFromKubeconfig(nonExistentPath, "")
 
 			// We should get an error
 			Expect(err).To(HaveOccurred())
@@ -82,7 +82,7 @@ var _ = Describe("Kubernetes Client", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("We try to setup a Kubernetes client with this invalid config")
-			clientset, err := ClientsetFromKubeconfig(kubeconfigPath)
+			clientset, err := ClientsetFromKubeconfig(kubeconfigPath, "")
 
 			// We should get an error
 			Expect(err).To(HaveOccurred())
@@ -117,7 +117,7 @@ users:
 			Expect(err).NotTo(HaveOccurred())
 
 			By("We setup a Kubernetes client with this valid config")
-			clientset, err := ClientsetFromKubeconfig(kubeconfigPath)
+			clientset, err := ClientsetFromKubeconfig(kubeconfigPath, "")
 
 			// We should not get an error
 			Expect(err).NotTo(HaveOccurred())
@@ -326,7 +326,7 @@ users:
 		It("should return an error when kubeconfig file does not exist", func() {
 			nonExistentPath := filepath.Join(tmpDir, "nonexistent")
 
-			thanosURL, token, err := SetupKubeconfigAuth(nonExistentPath, time.Hour)
+			thanosURL, token, err := SetupKubeconfigAuth(nonExistentPath, "", time.Hour)
 
 			Expect(err).To(HaveOccurred())
 			Expect(thanosURL).To(BeEmpty())
@@ -338,7 +338,7 @@ users:
 			err := os.WriteFile(kubeconfigPath, invalidConfig, 0644)
 			Expect(err).NotTo(HaveOccurred())
 
-			thanosURL, token, err := SetupKubeconfigAuth(kubeconfigPath, time.Hour)
+			thanosURL, token, err := SetupKubeconfigAuth(kubeconfigPath, "", time.Hour)
 
 			Expect(err).To(HaveOccurred())
 			Expect(thanosURL).To(BeEmpty())
@@ -368,7 +368,7 @@ users:
 			err := os.WriteFile(kubeconfigPath, []byte(validConfig), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
-			thanosURL, token, err := SetupKubeconfigAuth(kubeconfigPath, time.Hour)
+			thanosURL, token, err := SetupKubeconfigAuth(kubeconfigPath, "", time.Hour)
 
 			Expect(err).To(HaveOccurred())
 			Expect(thanosURL).To(BeEmpty())

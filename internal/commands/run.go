@@ -84,6 +84,8 @@ func init() {
 		"cluster type for categorization: ran, core, or hub")
 	runCmd.Flags().BoolVar(&flags.InsecureTLS, "insecure-tls", false,
 		"skip TLS certificate verification (development only)")
+	runCmd.Flags().StringVar(&flags.ProxyURL, "proxy-url", "",
+		"proxy URL for Thanos and Kubernetes API traffic, e.g. socks5://127.0.0.1:1337 (overrides any proxy-url in the kubeconfig)")
 
 	// Sampling flags
 	runCmd.Flags().DurationVar(&flags.SamplingFreq, "frequency", 60*time.Second,
@@ -250,7 +252,7 @@ func setupKubeconfigAuthIfNeeded(flags *config.InputFlags) error {
 
 	tokenDuration := tokenDurationForCollection(flags.SingleRun, flags.Duration)
 
-	thanosURL, token, err := kubernetes.SetupKubeconfigAuth(flags.Kubeconfig, tokenDuration)
+	thanosURL, token, err := kubernetes.SetupKubeconfigAuth(flags.Kubeconfig, flags.ProxyURL, tokenDuration)
 	if err != nil {
 		return fmt.Errorf("failed to setup kubeconfig auth: %w", err)
 	}
@@ -299,7 +301,7 @@ func resolveTasksFromSpec(flags *config.InputFlags) ([]task.Task, bool, bool, er
 	}
 
 	if spec.PerNodeData != nil && spec.PerNodeData.Isolcpus == "" && cpus == nil {
-		cpus, err = fetchCPUPlaceholders(flags.Kubeconfig)
+		cpus, err = fetchCPUPlaceholders(flags.Kubeconfig, flags.ProxyURL)
 		if err != nil {
 			return nil, false, false, err
 		}
@@ -457,7 +459,7 @@ func substituteCPUsIfNeeded(kpis config.KPIs, flags config.InputFlags) (config.K
 		return kpis, nil, nil
 	}
 
-	cpus, err := fetchCPUPlaceholders(flags.Kubeconfig)
+	cpus, err := fetchCPUPlaceholders(flags.Kubeconfig, flags.ProxyURL)
 	if err != nil {
 		return kpis, nil, err
 	}
@@ -465,12 +467,12 @@ func substituteCPUsIfNeeded(kpis config.KPIs, flags config.InputFlags) (config.K
 }
 
 // fetchCPUPlaceholders reads reserved and isolated CPU sets from PerformanceProfiles.
-func fetchCPUPlaceholders(kubeconfig string) (*config.CPUPlaceholders, error) {
+func fetchCPUPlaceholders(kubeconfig, proxyURL string) (*config.CPUPlaceholders, error) {
 	if kubeconfig == "" {
 		return nil, fmt.Errorf("--kubeconfig is required to read PerformanceProfile CPU sets")
 	}
 
-	reservedCPUs, isolatedCPUs, err := kubernetes.FetchCPUsFromPerformanceProfiles(kubeconfig)
+	reservedCPUs, isolatedCPUs, err := kubernetes.FetchCPUsFromPerformanceProfiles(kubeconfig, proxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch CPUs from PerformanceProfiles: %w", err)
 	}

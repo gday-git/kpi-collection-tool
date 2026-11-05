@@ -101,6 +101,7 @@ See [Prometheus KPI Configuration](kpis-file-configuration.md) for the full file
 | `--once`            | No       | false                        | With `--prom-kpis-config` only: collect all KPIs once and exit (mutually exclusive with `--tasks`, `--frequency`, `--duration`) |
 | `--parallel`        | No       | false                        | Run tasks concurrently (also settable via `orchestration.mode` in a tasks file)                                |
 | `--insecure-tls`    | No       | false                        | Skip TLS certificate verification (dev/lab clusters with self-signed certs)                                    |
+| `--proxy-url`       | No       | -                            | Proxy for Thanos and Kubernetes API traffic, e.g. `socks5://127.0.0.1:1337`. Overrides any `proxy-url` in the kubeconfig, so the kubeconfig can stay proxy-free (required for oslat's `mountKubeconfig`) |
 | `--tar-artifacts`   | No       | false                        | Create a `.tar.gz` archive of the artifacts directory after the run completes                                  |
 | `--artifacts-dir`   | No       | `./kpi-collector-artifacts/` | Directory for database, logs, and output files                                                                 |
 

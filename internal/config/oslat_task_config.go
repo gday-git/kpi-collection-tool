@@ -29,6 +29,13 @@ type OslatTaskConfig struct {
 	ConfigFile string   `yaml:"configFile,omitempty"`
 	Timeout    Duration `yaml:"timeout,omitempty"`
 	Pod        *Pod     `yaml:"pod,omitempty"`
+	// MountKubeconfig, when true, auto-creates a Secret from the run's --kubeconfig
+	// and injects it (volume + volumeMount + KUBECONFIG env) into every container,
+	// so no manual `oc create secret` is needed.
+	MountKubeconfig bool `yaml:"mountKubeconfig,omitempty"`
+	// MountPath is where the kubeconfig is mounted in the pod (default /kubeconfig);
+	// the file lands at <MountPath>/kubeconfig. Only used when MountKubeconfig is true.
+	MountPath string `yaml:"mountPath,omitempty"`
 }
 
 func (c *OslatTaskConfig) hasInlineFields() bool {

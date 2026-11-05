@@ -81,7 +81,7 @@ func buildOslatTask(spec config.TasksSpec, flags config.InputFlags) (Task, error
 	if spec.Oslat == nil {
 		return nil, fmt.Errorf("%s: task config is missing", config.TaskConfigOslat)
 	}
-	t := NewOslatTask(*spec.Oslat, flags.Kubeconfig, database.OutputDir)
+	t := NewOslatTask(*spec.Oslat, flags.Kubeconfig, flags.ProxyURL, database.OutputDir)
 	t.cleanup = spec.Orchestration.Cleanup
 	return t, nil
 }
@@ -93,7 +93,7 @@ func buildPerNodeDataTask(spec config.TasksSpec, flags config.InputFlags) (Task,
 	if spec.PerNodeData == nil {
 		return nil, fmt.Errorf("%s: task config is missing", config.TaskConfigPerNodeData)
 	}
-	t := NewPerNodeDataTask(*spec.PerNodeData, flags.Kubeconfig, database.OutputDir)
+	t := NewPerNodeDataTask(*spec.PerNodeData, flags.Kubeconfig, flags.ProxyURL, database.OutputDir)
 	t.cleanup = spec.Orchestration.Cleanup
 	return t, nil
 }
@@ -107,7 +107,7 @@ func buildAppRecoveryTimeTask(spec config.TasksSpec, flags config.InputFlags) (T
 	}
 	cfg := *spec.AppRecoveryTime
 
-	client, err := kubernetes.ClientsetFromKubeconfig(flags.Kubeconfig)
+	client, err := kubernetes.ClientsetFromKubeconfig(flags.Kubeconfig, flags.ProxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", config.TaskConfigAppRecoveryTime, err)
 	}
@@ -117,7 +117,7 @@ func buildAppRecoveryTimeTask(spec config.TasksSpec, flags config.InputFlags) (T
 		return nil, fmt.Errorf("%s: %w", config.TaskConfigAppRecoveryTime, err)
 	}
 
-	t := NewAppRecoveryTimeTask(cfg, flags.Kubeconfig, database.OutputDir)
+	t := NewAppRecoveryTimeTask(cfg, flags.Kubeconfig, flags.ProxyURL, database.OutputDir)
 	t.cleanup = spec.Orchestration.Cleanup
 	return t, nil
 }
