@@ -11,6 +11,9 @@ type PerNodeDataTaskConfig struct {
 	Image              string   `yaml:"image,omitempty"`
 	Isolcpus           string   `yaml:"isolcpus,omitempty"`
 	WorkloadNamespaces []string `yaml:"workloadNamespaces,omitempty"`
+	// EnhancedCollection additionally collects hardware inventory (CPU
+	// model/family/cores, BIOS, DIMMs, disks) into hw_inventory-<node>.txt.
+	EnhancedCollection bool `yaml:"enhanced-collection,omitempty"`
 }
 
 func (c *PerNodeDataTaskConfig) hasInlineFields() bool {
@@ -18,7 +21,8 @@ func (c *PerNodeDataTaskConfig) hasInlineFields() bool {
 		c.Interval.Duration != 0 ||
 		c.Image != "" ||
 		c.Isolcpus != "" ||
-		len(c.WorkloadNamespaces) > 0
+		len(c.WorkloadNamespaces) > 0 ||
+		c.EnhancedCollection
 }
 
 func resolveAndValidatePerNodeData(spec *TasksSpec) error {

@@ -22,10 +22,26 @@ import (
 )
 
 const (
-	meminfoMarker   = "___KPI_MEMINFO___"
-	cmdlineMarker   = "___KPI_CMDLINE___"
-	debugWaitBuffer = 10 * time.Minute
+	meminfoMarker      = "___KPI_MEMINFO___"
+	cmdlineMarker      = "___KPI_CMDLINE___"
+	hwInventoryMarker  = "___KPI_HW_INVENTORY___"
+	debugWaitBuffer    = 10 * time.Minute
 )
+
+// collectSection describes one marker-delimited section the collect script
+// emits after `top`. It drives env-var plumbing, log splitting, and artifact
+// file naming.
+type collectSection struct {
+	envVar string // env var the script reads the marker from
+	marker string
+	prefix string // artifact file is prefix + node + suffix
+	suffix string
+}
+
+var baseCollectSections = []collectSection{
+	{"MEMINFO_MARKER", meminfoMarker, "proc_meminfo-", ".txt"},
+	{"CMDLINE_MARKER", cmdlineMarker, "proc_cmdline-", ".txt"},
+}
 
 //go:embed per_node_collect.sh
 var collectScript string
@@ -44,6 +60,17 @@ func NewPerNodeDataTask(cfg config.PerNodeDataTaskConfig, kubeconfig, proxyURL, 
 }
 
 func (t *PerNodeDataTask) Name() string { return config.TaskConfigPerNodeData }
+
+// sections returns the marker-delimited sections the collect script will
+// emit for this task: the base sections, plus hardware inventory when
+// enhanced-collection is enabled.
+func (t *PerNodeDataTask) sections() []collectSection {
+	if !t.cfg.EnhancedCollection {
+		return baseCollectSections
+	}
+	return append(append([]collectSection{}, baseCollectSections...),
+		collectSection{envVar: "HW_INVENTORY_MARKER", marker: hwInventoryMarker, prefix: "hw_inventory-", suffix: ".txt"})
+}
 
 func (t *PerNodeDataTask) Run(ctx context.Context) error {
 	if t.cfg.Isolcpus == "" {
@@ -152,6 +179,14 @@ func (t *PerNodeDataTask) collectNode(ctx context.Context, client *k8s.Clientset
 func (t *PerNodeDataTask) debugPod(node string) *corev1.Pod {
 	privileged := true
 	n := int(t.cfg.Duration.Duration / t.cfg.Interval.Duration)
+	env := []corev1.EnvVar{
+		{Name: "ISOLCPUS", Value: t.cfg.Isolcpus},
+		{Name: "TOP_DELAY", Value: fmt.Sprintf("%g", t.cfg.Interval.Seconds())},
+		{Name: "TOP_COUNT", Value: strconv.Itoa(n)},
+	}
+	for _, s := range t.sections() {
+		env = append(env, corev1.EnvVar{Name: s.envVar, Value: s.marker})
+	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: debugPodName(node)},
 		Spec: corev1.PodSpec{
@@ -163,13 +198,7 @@ func (t *PerNodeDataTask) debugPod(node string) *corev1.Pod {
 				Image:           t.cfg.Image,
 				ImagePullPolicy: corev1.PullIfNotPresent,
 				Command:         []string{"chroot", "/host", "/bin/bash", "-c", collectScript},
-				Env: []corev1.EnvVar{
-					{Name: "ISOLCPUS", Value: t.cfg.Isolcpus},
-					{Name: "TOP_DELAY", Value: fmt.Sprintf("%g", t.cfg.Interval.Seconds())},
-					{Name: "TOP_COUNT", Value: strconv.Itoa(n)},
-					{Name: "MEMINFO_MARKER", Value: meminfoMarker},
-					{Name: "CMDLINE_MARKER", Value: cmdlineMarker},
-				},
+				Env:             env,
 				SecurityContext: &corev1.SecurityContext{Privileged: &privileged},
 				VolumeMounts:    []corev1.VolumeMount{{Name: "host", MountPath: "/host"}},
 			}},
@@ -182,15 +211,14 @@ func (t *PerNodeDataTask) debugPod(node string) *corev1.Pod {
 }
 
 func (t *PerNodeDataTask) writeNodeArtifacts(node, body string) error {
-	top, mem, cmdline, err := splitCollectLogs(body)
+	parts, err := splitCollectLogs(body, t.sections())
 	if err != nil {
 		_ = os.WriteFile(filepath.Join(t.artifactsDir, "top-"+node+".out"), []byte(body), 0600)
 		return err
 	}
-	files := map[string]string{
-		"top-" + node + ".out":          top,
-		"proc_meminfo-" + node + ".txt": mem,
-		"proc_cmdline-" + node + ".txt": cmdline,
+	files := map[string]string{"top-" + node + ".out": parts[0]}
+	for i, s := range t.sections() {
+		files[s.prefix+node+s.suffix] = parts[i+1]
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(t.artifactsDir, name), []byte(content), 0600); err != nil {
@@ -210,15 +238,22 @@ func (t *PerNodeDataTask) writeDescribes(ctx context.Context, client *k8s.Client
 	return kubernetes.WriteNodesYAML(ctx, client, filepath.Join(t.artifactsDir, "describe_nodes.txt"))
 }
 
-func splitCollectLogs(body string) (top, mem, cmdline string, err error) {
-	memKey := meminfoMarker + "\n"
-	cmdKey := cmdlineMarker + "\n"
-	i := strings.Index(body, memKey)
-	j := strings.Index(body, cmdKey)
-	if i < 0 || j < 0 || j < i {
-		return "", "", "", fmt.Errorf("pod logs missing %s / %s markers", meminfoMarker, cmdlineMarker)
+// splitCollectLogs splits the pod log into len(sections)+1 parts: everything
+// before the first marker (the `top` output), then one part per section, up
+// to the next marker or EOF. Markers are searched only in the remaining
+// suffix, so out-of-order markers surface as a missing-marker error.
+func splitCollectLogs(body string, sections []collectSection) ([]string, error) {
+	parts := make([]string, 0, len(sections)+1)
+	for _, s := range sections {
+		key := s.marker + "\n"
+		i := strings.Index(body, key)
+		if i < 0 {
+			return nil, fmt.Errorf("pod logs missing marker %s", s.marker)
+		}
+		parts = append(parts, body[:i])
+		body = body[i+len(key):]
 	}
-	return body[:i], body[i+len(memKey) : j], body[j+len(cmdKey):], nil
+	return append(parts, body), nil
 }
 
 // debugPodName turns a Kubernetes node name into a DNS-1123 pod name.

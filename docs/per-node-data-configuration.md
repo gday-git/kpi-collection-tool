@@ -18,6 +18,7 @@ cluster and collects:
 | CPU usage over time | `top -b` via `taskset` on isolated CPUs | `top-<node>.out` |
 | Memory information | `/proc/meminfo` | `proc_meminfo-<node>.txt` |
 | Kernel command line | `/proc/cmdline` | `proc_cmdline-<node>.txt` |
+| Hardware inventory (opt-in) | `lscpu`, `dmidecode`, `lsblk`, `/sys/class/dmi/id` via `chroot /host` | `hw_inventory-<node>.txt` |
 | Pod descriptions | Kubernetes API (`kubectl describe pods -n <ns>`) | `describe_pods_<ns>.txt` |
 | Node descriptions | Kubernetes API (`kubectl describe nodes`) | `describe_nodes.txt` |
 
@@ -54,6 +55,7 @@ per-node-data:
   interval: 30s
   image: registry.access.redhat.com/ubi9/ubi-minimal:latest
   isolcpus: "2-15"
+  enhanced-collection: true
 ```
 
 ## Field reference
@@ -65,6 +67,7 @@ per-node-data:
 | `interval` | Yes | — | `top` sampling period — how often a snapshot is taken. Must be less than `duration`. Accepts a Go duration string. |
 | `image` | Yes | — | Container image for the privileged debug pod. Must support `chroot` (the task runs `chroot /host` to access host tools). |
 | `isolcpus` | No | PerformanceProfile isolated CPUs | CPU list passed to `taskset -c` when running `top`. When omitted, filled from the cluster PerformanceProfile isolated CPU set. Set this to override that value. |
+| `enhanced-collection` | No | `false` | Additionally collects a hardware inventory (CPU model/family/cores, BIOS version and date, DIMMs, disks) into `hw_inventory-<node>.txt`. See [Enhanced collection](#enhanced-collection). |
 
 ### Validation rules
 
@@ -140,11 +143,38 @@ per-node-data:
   # isolcpus: "2,4,6,8"   # Comma-separated list also works
 ```
 
+## Enhanced collection
+
+Setting `enhanced-collection: true` adds a hardware inventory pass to each
+node's collection. The inventory runs after `top` completes and gathers:
+
+- CPU model, family, core count (`lscpu`)
+- BIOS type, processor, and memory/DIMM details (`dmidecode`)
+- Disk models, sizes, and rotational flags (`lsblk`)
+- Board and BIOS identification (`/sys/class/dmi/id`)
+
+All of it lands in a single `hw_inventory-<node>.txt` per node.
+
+Each inventory command is guarded: if a tool is missing or blocked (`dmidecode`
+is optional on RHCOS), the artifact records a failure note instead of failing
+the whole collection — the base `top`/meminfo/cmdline artifacts are unaffected.
+
+```yaml
+per-node-data:
+  workloadNamespaces: [default]
+  duration: 30m
+  interval: 30s
+  image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+  enhanced-collection: true
+```
+
 ## Image requirements
 
 The debug pod uses `chroot /host` to access host-level tools (`top`, `taskset`,
 `cat`). The image itself only needs to support the `chroot` syscall — it does
-**not** need these tools installed.
+**not** need these tools installed. This also holds with
+`enhanced-collection: true`: the inventory commands run from the node, not the
+image.
 
 Recommended: `registry.access.redhat.com/ubi9/ubi-minimal:latest`
 

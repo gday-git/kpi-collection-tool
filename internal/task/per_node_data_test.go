@@ -32,15 +32,29 @@ var _ = Describe("splitCollectLogs", func() {
 	It("splits log sections on marker lines", func() {
 		body := "top output\n" + meminfoMarker + "\nMemTotal: 1 kB\n" + cmdlineMarker + "\nBOOT_IMAGE=linux\n"
 
-		top, mem, cmdline, err := splitCollectLogs(body)
+		parts, err := splitCollectLogs(body, baseCollectSections)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(top).To(Equal("top output\n"))
-		Expect(mem).To(Equal("MemTotal: 1 kB\n"))
-		Expect(cmdline).To(Equal("BOOT_IMAGE=linux\n"))
+		Expect(parts).To(Equal([]string{"top output\n", "MemTotal: 1 kB\n", "BOOT_IMAGE=linux\n"}))
 	})
 
-	It("errors when markers are missing or out of order", func() {
-		_, _, _, err := splitCollectLogs("no markers here")
+	It("splits an additional hardware inventory section when enabled", func() {
+		body := "top\n" + meminfoMarker + "\nmem\n" + cmdlineMarker + "\ncmd\n" + hwInventoryMarker + "\nlscpu stuff\n"
+		sections := append(append([]collectSection{}, baseCollectSections...),
+			collectSection{envVar: "HW_INVENTORY_MARKER", marker: hwInventoryMarker, prefix: "hw_inventory-", suffix: ".txt"})
+
+		parts, err := splitCollectLogs(body, sections)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(parts).To(Equal([]string{"top\n", "mem\n", "cmd\n", "lscpu stuff\n"}))
+	})
+
+	It("errors when markers are missing", func() {
+		_, err := splitCollectLogs("no markers here", baseCollectSections)
+		Expect(err).To(MatchError(ContainSubstring("missing")))
+	})
+
+	It("errors when markers are out of order", func() {
+		body := "top\n" + cmdlineMarker + "\ncmd\n" + meminfoMarker + "\nmem\n"
+		_, err := splitCollectLogs(body, baseCollectSections)
 		Expect(err).To(MatchError(ContainSubstring("missing")))
 	})
 })
@@ -77,6 +91,40 @@ var _ = Describe("PerNodeDataTask writeNodeArtifacts", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(cmdline)).To(Equal("cmd\n"))
 	})
+
+	It("writes a hardware inventory artifact when enhanced-collection is enabled", func() {
+		t := &PerNodeDataTask{artifactsDir: tmpDir, cfg: config.PerNodeDataTaskConfig{EnhancedCollection: true}}
+		body := "top\n" + meminfoMarker + "\nmem\n" + cmdlineMarker + "\ncmd\n" + hwInventoryMarker + "\nlscpu\n"
+
+		err := t.writeNodeArtifacts("node-1", body)
+		Expect(err).NotTo(HaveOccurred())
+
+		hw, err := os.ReadFile(filepath.Join(tmpDir, "hw_inventory-node-1.txt"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(hw)).To(Equal("lscpu\n"))
+	})
+
+	It("does not write a hardware inventory artifact when enhanced-collection is disabled", func() {
+		t := &PerNodeDataTask{artifactsDir: tmpDir}
+		body := "top\n" + meminfoMarker + "\nmem\n" + cmdlineMarker + "\ncmd\n"
+
+		err := t.writeNodeArtifacts("node-1", body)
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = os.Stat(filepath.Join(tmpDir, "hw_inventory-node-1.txt"))
+		Expect(os.IsNotExist(err)).To(BeTrue())
+	})
+
+	It("falls back to a raw dump when markers are missing", func() {
+		t := &PerNodeDataTask{artifactsDir: tmpDir}
+
+		err := t.writeNodeArtifacts("node-1", "garbage")
+		Expect(err).To(MatchError(ContainSubstring("missing")))
+
+		top, err := os.ReadFile(filepath.Join(tmpDir, "top-node-1.out"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(top)).To(Equal("garbage"))
+	})
 })
 
 var _ = Describe("PerNodeDataTask debugPod", func() {
@@ -102,7 +150,24 @@ var _ = Describe("PerNodeDataTask debugPod", func() {
 		Expect(env["TOP_COUNT"]).To(Equal("360"))
 		Expect(env["MEMINFO_MARKER"]).To(Equal(meminfoMarker))
 		Expect(env["CMDLINE_MARKER"]).To(Equal(cmdlineMarker))
+		Expect(env["HW_INVENTORY_MARKER"]).To(BeEmpty())
 		Expect(*pod.Spec.Containers[0].SecurityContext.Privileged).To(BeTrue())
+	})
+
+	It("sets the hardware inventory marker env when enhanced-collection is enabled", func() {
+		t := &PerNodeDataTask{
+			cfg: config.PerNodeDataTaskConfig{
+				Duration:           config.Duration{Duration: 30 * time.Minute},
+				Interval:           config.Duration{Duration: 5 * time.Second},
+				Image:              "debug:latest",
+				Isolcpus:           "2-3",
+				EnhancedCollection: true,
+			},
+		}
+
+		pod := t.debugPod("worker-0.example.com")
+		env := envMap(pod.Spec.Containers[0].Env)
+		Expect(env["HW_INVENTORY_MARKER"]).To(Equal(hwInventoryMarker))
 	})
 })
 

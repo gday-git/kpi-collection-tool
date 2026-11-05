@@ -2,10 +2,13 @@
 #
 # Collects top, /proc/meminfo, /proc/cmdline from every cluster node via a
 # privileged debug pod, plus pod and node describes from the API.
+# Set enhanced-collection: true to also capture a hardware inventory
+# (lscpu, dmidecode, lsblk) into hw_inventory-<node>.txt per node.
 #
 # Artifacts (under --artifacts-dir):
 #   top-<node>.out, proc_meminfo-<node>.txt, proc_cmdline-<node>.txt,
 #   describe_pods_<ns>.txt, describe_nodes.txt
+#   (+ hw_inventory-<node>.txt with enhanced-collection)
 #
 # Requires: --kubeconfig
 #
@@ -21,3 +24,4 @@ per-node-data:
   interval: 30s
   image: registry.access.redhat.com/ubi9/ubi-minimal:latest
   # isolcpus: "2-15"  # Optional. When omitted, the PerformanceProfile isolated CPU set is used.
+  # enhanced-collection: true  # Optional. Also collect a hardware inventory into hw_inventory-<node>.txt.
