@@ -13,7 +13,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-const podPollInterval = 5 * time.Second
+const (
+	podPollInterval = 5 * time.Second
+	podDeleteWait   = 2 * time.Minute
+)
 
 // CreatePod creates the pod. Empty namespace becomes "default".
 func CreatePod(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod) (*corev1.Pod, error) {
@@ -49,16 +52,47 @@ func CreateOrUpdateSecret(ctx context.Context, client kubernetes.Interface, name
 	return nil
 }
 
-// DeletePod deletes the pod if it exists; NotFound is not an error.
+// DeletePod force-deletes the pod (grace period 0 — the tool only deletes its
+// own pods) and waits until the object is gone from the API, so a pod with
+// the same name can be recreated immediately. Without this, deleting a
+// running pod leaves it in Terminating for its grace period and recreating it
+// fails with "object is being deleted". NotFound is not an error.
 func DeletePod(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
-	err := client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	grace := int64(0)
+	err := client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{GracePeriodSeconds: &grace})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("failed to delete pod %s/%s: %w", namespace, name, err)
 	}
-	return nil
+	return waitForPodDeleted(ctx, client, namespace, name)
+}
+
+// waitForPodDeleted polls until the pod is gone from the API, bounded by
+// podDeleteWait so a stuck deletion (e.g. a finalizer) surfaces as an error
+// instead of blocking forever.
+func waitForPodDeleted(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	waitCtx, cancel := context.WithTimeout(ctx, podDeleteWait)
+	defer cancel()
+
+	ticker := time.NewTicker(podPollInterval)
+	defer ticker.Stop()
+
+	for {
+		_, err := client.CoreV1().Pods(namespace).Get(waitCtx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to get pod %s/%s after delete: %w", namespace, name, err)
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("timed out waiting for pod %s/%s to be deleted: %w", namespace, name, waitCtx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 // DeletePodsByPrefix deletes every pod in namespace whose name starts with
