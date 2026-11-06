@@ -108,6 +108,14 @@ func (t *PerNodeDataTask) collectNode(ctx context.Context, client *k8s.Clientset
 		defer removePod(ctx, client, created.Namespace, created.Name, t.Name())
 	}
 
+	// Delete the debug pod as soon as this node's logs and artifacts are
+	// written — success or failure — so nothing outlives the task.
+	defer func() {
+		if err := kubernetes.DeletePod(context.WithoutCancel(ctx), client, created.Namespace, created.Name); err != nil {
+			log.Printf("%s: %v", t.Name(), err)
+		}
+	}()
+
 	wait := t.cfg.Duration.Duration + debugWaitBuffer
 	finished, waitErr := kubernetes.WaitForPodTerminal(kubernetes.PodWaitParams{
 		Ctx:       ctx,

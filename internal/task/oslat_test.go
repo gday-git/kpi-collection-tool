@@ -37,7 +37,10 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		secretNS, secretName, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(secretNS).To(Equal("default"))
+		Expect(secretName).To(Equal("oslat-test-kubeconfig"))
 
 		// Secret created in the resolved (default) namespace with the kubeconfig data.
 		Expect(pod.Namespace).To(Equal("default"))
@@ -61,16 +64,46 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true, MountPath: "/kc"}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		_, _, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
 
 		c := pod.Spec.Containers[0]
 		Expect(c.VolumeMounts[0].MountPath).To(Equal("/kc"))
 		Expect(c.Env).To(ContainElement(corev1.EnvVar{Name: "KUBECONFIG", Value: "/preset"}))
 	})
 
+	It("patches init containers with the mount and KUBECONFIG env", func() {
+		pod.Spec.InitContainers = []corev1.Container{
+			{Name: "init", Image: "img"},
+			{Name: "preset", Image: "img", Env: []corev1.EnvVar{{Name: "KUBECONFIG", Value: "/preset"}}},
+		}
+		client := fake.NewClientset()
+		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
+
+		_, _, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		init := pod.Spec.InitContainers[0]
+		Expect(init.VolumeMounts[0].MountPath).To(Equal("/kubeconfig"))
+		Expect(init.Env).To(ContainElement(corev1.EnvVar{Name: "KUBECONFIG", Value: "/kubeconfig/kubeconfig"}))
+
+		preset := pod.Spec.InitContainers[1]
+		Expect(preset.VolumeMounts[0].MountPath).To(Equal("/kubeconfig"))
+		Expect(preset.Env).To(ContainElement(corev1.EnvVar{Name: "KUBECONFIG", Value: "/preset"}))
+	})
+
+	It("errors when the pod spec already defines a kubeconfig volume", func() {
+		pod.Spec.Volumes = []corev1.Volume{{Name: "kubeconfig"}}
+		client := fake.NewClientset()
+		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
+
+		_, _, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).To(MatchError(ContainSubstring(`volume "kubeconfig" already defined`)))
+	})
+
 	It("errors when no kubeconfig path is provided", func() {
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, "", "", "/tmp")
-		err := t.injectKubeconfig(context.Background(), fake.NewClientset(), pod)
+		_, _, err := t.injectKubeconfig(context.Background(), fake.NewClientset(), pod)
 		Expect(err).To(HaveOccurred())
 	})
 })

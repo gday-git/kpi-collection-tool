@@ -50,18 +50,36 @@ func DeletePod(ctx context.Context, client kubernetes.Interface, namespace, name
 	return nil
 }
 
-// CreateOrUpdateSecret creates the named secret, or updates it if it already exists.
+// CreateOrUpdateSecret creates the named secret, or updates it if it already
+// exists. Updates go through the fetched object so its ResourceVersion is
+// preserved — the API server rejects updates that omit it.
 func CreateOrUpdateSecret(ctx context.Context, client kubernetes.Interface, namespace, name string, data map[string][]byte) error {
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Data:       data,
-	}
-	_, err := client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
-		_, err = client.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
+	existing, err := client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Data:       data,
+		}
+		_, err = client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	case err == nil:
+		existing.Data = data
+		_, err = client.CoreV1().Secrets(namespace).Update(ctx, existing, metav1.UpdateOptions{})
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create/update secret %s/%s: %w", namespace, name, err)
+	}
+	return nil
+}
+
+// DeleteSecret deletes the secret if it exists; NotFound is not an error.
+func DeleteSecret(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	err := client.CoreV1().Secrets(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to delete secret %s/%s: %w", namespace, name, err)
 	}
 	return nil
 }
