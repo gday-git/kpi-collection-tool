@@ -72,6 +72,27 @@ func CreateOrUpdateSecret(ctx context.Context, client kubernetes.Interface, name
 	return nil
 }
 
+// DeletePodsByPrefix deletes every pod in namespace whose name starts with
+// prefix, returning the deleted names. Useful to sweep leftovers from a killed
+// prior run; an empty result means there was nothing to clean.
+func DeletePodsByPrefix(ctx context.Context, client kubernetes.Interface, namespace, prefix string) ([]string, error) {
+	list, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods in %s: %w", namespace, err)
+	}
+	var deleted []string
+	for _, pod := range list.Items {
+		if !strings.HasPrefix(pod.Name, prefix) {
+			continue
+		}
+		if err := DeletePod(ctx, client, namespace, pod.Name); err != nil {
+			return deleted, err
+		}
+		deleted = append(deleted, pod.Name)
+	}
+	return deleted, nil
+}
+
 // DeleteSecret deletes the secret if it exists; NotFound is not an error.
 func DeleteSecret(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
 	err := client.CoreV1().Secrets(namespace).Delete(ctx, name, metav1.DeleteOptions{})

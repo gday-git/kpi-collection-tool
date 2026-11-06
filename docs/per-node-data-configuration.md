@@ -23,6 +23,9 @@ cluster and collects:
 
 All artifacts are written under `--artifacts-dir`.
 
+Debug pods are deleted as soon as a node's collection finishes, and any debug
+pods left behind by a killed prior run are removed before the task starts.
+
 ## Configuration format
 
 The configuration lives under a `per-node-data:` root key — either inline in a
