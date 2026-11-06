@@ -81,14 +81,12 @@ func (t *OslatTask) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", t.Name(), err)
 	}
-	if t.cleanup {
-		defer removePod(ctx, client, created.Namespace, created.Name, t.Name())
-	}
-
 	// Clean up everything this task created — pod and kubeconfig Secret —
 	// before returning, on success and failure alike. WithoutCancel keeps the
 	// deletion working when the run was aborted mid-flight.
-	defer t.cleanup(ctx, client, created.Namespace, created.Name, secretNamespace, secretName)
+	if t.cleanup {
+		defer t.cleanupResources(ctx, client, created.Namespace, created.Name, secretNamespace, secretName)
+	}
 
 	ns := created.Namespace
 	output.PrintTaskProgress(t.Name(), fmt.Sprintf("waiting for pod %s/%s (timeout=%s)", ns, created.Name, t.cfg.Timeout))
@@ -120,11 +118,11 @@ func (t *OslatTask) Run(ctx context.Context) error {
 	return nil
 }
 
-// cleanup deletes the pod and (when mountKubeconfig was used) the kubeconfig
-// Secret. It runs on every exit path of Run so a failed task leaves nothing
-// behind. Errors are logged, not returned — the task's primary result takes
-// precedence.
-func (t *OslatTask) cleanup(ctx context.Context, client k8s.Interface, podNamespace, podName, secretNamespace, secretName string) {
+// cleanupResources deletes the pod and (when mountKubeconfig was used) the
+// kubeconfig Secret. It runs on every exit path of Run so a failed task leaves
+// nothing behind. Errors are logged, not returned — the task's primary result
+// takes precedence.
+func (t *OslatTask) cleanupResources(ctx context.Context, client k8s.Interface, podNamespace, podName, secretNamespace, secretName string) {
 	cleanupCtx := context.WithoutCancel(ctx)
 	if err := kubernetes.DeletePod(cleanupCtx, client, podNamespace, podName); err != nil {
 		log.Printf("%s: %v", t.Name(), err)
