@@ -71,7 +71,8 @@ func (t *PerNodeDataTask) Run(ctx context.Context) error {
 		log.Printf("%s: removed leftover debug pods from a previous run: %v", t.Name(), deleted)
 	}
 
-	output.PrintTaskProgress(t.Name(), fmt.Sprintf("collecting from %d node(s)", len(nodes)))
+	output.PrintTaskProgress(t.Name(), fmt.Sprintf(
+		"collecting from %d node(s) (duration=%s)", len(nodes), t.cfg.Duration))
 
 	nodeErr := t.collectAll(ctx, client, nodes)
 	descErr := t.writeDescribes(ctx, client)
