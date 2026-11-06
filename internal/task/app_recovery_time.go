@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -46,6 +47,20 @@ func (t *AppRecoveryTimeTask) Run(ctx context.Context) error {
 	}
 
 	taskName := t.Name()
+
+	// Delete every reboot pod this task created (or attempted) before
+	// returning, on success and failure alike. DeleteRebootPod treats
+	// never-created pods as a no-op, so registering before the create loop
+	// also covers mid-loop failures.
+	defer func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		for _, nodeName := range t.cfg.NodeNames {
+			if err := kubernetes.DeleteRebootPod(cleanupCtx, client, nodeName); err != nil {
+				log.Printf("%s: %v", taskName, err)
+			}
+		}
+	}()
+
 	for _, nodeName := range t.cfg.NodeNames {
 		output.PrintTaskProgress(taskName, fmt.Sprintf("creating reboot pod on %s", nodeName))
 		if err := kubernetes.CreateRebootPod(ctx, client, nodeName, t.cfg.Image); err != nil {

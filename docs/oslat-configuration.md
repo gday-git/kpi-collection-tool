@@ -193,7 +193,9 @@ oslat:
 
 The tool creates a Secret named `<pod-name>-kubeconfig` from the run's
 `--kubeconfig`, mounts it read-only at `mountPath`, and sets `KUBECONFIG` on every
-container (an existing `KUBECONFIG` env is left untouched).
+container, init containers included (an existing `KUBECONFIG` env is left
+untouched). When the task finishes — successfully or not — the pod and the
+Secret are deleted, so no credentials remain in the cluster afterwards.
 
 > **Proxy note:** the mounted kubeconfig runs in-cluster, so it must **not**
 > contain a `proxy-url` pointing at a laptop-local proxy (it is unreachable from
