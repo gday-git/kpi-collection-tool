@@ -98,6 +98,32 @@ var _ = Describe("DeleteSecret", func() {
 	})
 })
 
+var _ = Describe("DeletePodsByPrefix", func() {
+	It("deletes only the pods whose name matches the prefix", func() {
+		pnd1 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pnd-node-1", Namespace: "default"}}
+		pnd2 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pnd-node-2", Namespace: "default"}}
+		other := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "oslat-test", Namespace: "default"}}
+		client := fake.NewClientset(pnd1, pnd2, other)
+
+		deleted, err := DeletePodsByPrefix(context.Background(), client, "default", "pnd-")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deleted).To(ConsistOf("pnd-node-1", "pnd-node-2"))
+
+		_, err = client.CoreV1().Pods("default").Get(context.Background(), "pnd-node-1", metav1.GetOptions{})
+		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		_, err = client.CoreV1().Pods("default").Get(context.Background(), "oslat-test", metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("returns nothing when there is nothing to clean", func() {
+		client := fake.NewClientset()
+
+		deleted, err := DeletePodsByPrefix(context.Background(), client, "default", "pnd-")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deleted).To(BeEmpty())
+	})
+})
+
 var _ = Describe("WaitForPodTerminal", func() {
 	It("returns immediately when the pod already succeeded", func() {
 		pod := &corev1.Pod{

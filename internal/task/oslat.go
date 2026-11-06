@@ -51,6 +51,23 @@ func (t *OslatTask) Run(ctx context.Context) error {
 		pod.Kind = "Pod"
 	}
 
+	// A killed prior run may have left this pod (and its kubeconfig Secret)
+	// behind — defers do not survive SIGKILL. Remove them before creating
+	// anything so a re-run does not collide with the stale objects. A
+	// same-named pod is assumed to be from a prior tool run.
+	if pod.Namespace == "" {
+		pod.Namespace = "default"
+	}
+	if err := kubernetes.DeletePod(ctx, client, pod.Namespace, pod.Name); err != nil {
+		log.Printf("%s: warning: failed to remove leftover pod: %v", t.Name(), err)
+	}
+	if t.cfg.MountKubeconfig {
+		secret := pod.Name + "-kubeconfig"
+		if err := kubernetes.DeleteSecret(ctx, client, pod.Namespace, secret); err != nil {
+			log.Printf("%s: warning: failed to remove leftover secret %s: %v", t.Name(), secret, err)
+		}
+	}
+
 	var secretNamespace, secretName string
 	if t.cfg.MountKubeconfig {
 		secretNamespace, secretName, err = t.injectKubeconfig(ctx, client, pod)

@@ -60,6 +60,16 @@ func (t *PerNodeDataTask) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", t.Name(), err)
 	}
+
+	// A killed prior run leaves its debug pods behind (defers do not survive
+	// SIGKILL); sweep them so this run does not collide with stale pods.
+	deleted, err := kubernetes.DeletePodsByPrefix(ctx, client, "default", "pnd-")
+	if err != nil {
+		log.Printf("%s: warning: failed to remove leftover debug pods: %v", t.Name(), err)
+	} else if len(deleted) > 0 {
+		log.Printf("%s: removed leftover debug pods from a previous run: %v", t.Name(), deleted)
+	}
+
 	output.PrintTaskProgress(t.Name(), fmt.Sprintf("collecting from %d node(s)", len(nodes)))
 
 	nodeErr := t.collectAll(ctx, client, nodes)

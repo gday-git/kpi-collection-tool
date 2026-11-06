@@ -36,6 +36,17 @@ func NewAppRecoveryTimeTask(cfg config.AppRecoveryTimeTaskConfig, kubeconfig, pr
 
 func (t *AppRecoveryTimeTask) Name() string { return config.TaskConfigAppRecoveryTime }
 
+// cleanupRebootPods deletes this task's reboot pods for every configured node,
+// logging failures. DeleteRebootPod treats never-created pods as a no-op. Used
+// both pre-flight (sweeping a killed prior run) and on the exit path.
+func (t *AppRecoveryTimeTask) cleanupRebootPods(ctx context.Context, client k8sclient.Interface) {
+	for _, nodeName := range t.cfg.NodeNames {
+		if err := kubernetes.DeleteRebootPod(ctx, client, nodeName); err != nil {
+			log.Printf("%s: %v", t.Name(), err)
+		}
+	}
+}
+
 // Run reboots nodeNames, waits until they are NotReady or the API is
 // unreachable (SNO / control-plane reboot), then polls workload pods for
 // duration. List/get failures are written to pod_status.out; the poll loop
@@ -52,14 +63,11 @@ func (t *AppRecoveryTimeTask) Run(ctx context.Context) error {
 	// returning, on success and failure alike. DeleteRebootPod treats
 	// never-created pods as a no-op, so registering before the create loop
 	// also covers mid-loop failures.
-	defer func() {
-		cleanupCtx := context.WithoutCancel(ctx)
-		for _, nodeName := range t.cfg.NodeNames {
-			if err := kubernetes.DeleteRebootPod(cleanupCtx, client, nodeName); err != nil {
-				log.Printf("%s: %v", taskName, err)
-			}
-		}
-	}()
+	defer t.cleanupRebootPods(context.WithoutCancel(ctx), client)
+
+	// A killed prior run may have left reboot pods behind (defers do not
+	// survive SIGKILL); remove them before creating new ones.
+	t.cleanupRebootPods(ctx, client)
 
 	for _, nodeName := range t.cfg.NodeNames {
 		output.PrintTaskProgress(taskName, fmt.Sprintf("creating reboot pod on %s", nodeName))
