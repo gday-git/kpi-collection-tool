@@ -32,8 +32,9 @@ var _ = Describe("CreateRebootPod", func() {
 	It("creates a privileged reboot pod on the target node", func() {
 		client := fake.NewClientset()
 
-		err := CreateRebootPod(context.Background(), client, "worker-1", "ubi-minimal:latest")
+		created, err := CreateRebootPod(context.Background(), client, "worker-1", "ubi-minimal:latest")
 		Expect(err).NotTo(HaveOccurred())
+		Expect(created.Name).To(Equal(rebootPodPrefix + "worker-1"))
 
 		pod, err := client.CoreV1().Pods(rebootPodNamespace).Get(
 			context.Background(),

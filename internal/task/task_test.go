@@ -108,6 +108,21 @@ var _ = Describe("ResolveFromTasksSpec", func() {
 
 	flags := config.InputFlags{ClusterName: "test-cluster"}
 
+	It("passes orchestration.cleanup to pod-creating tasks", func() {
+		cfg := config.TasksSpec{
+			Orchestration: config.OrchestrationConfig{Cleanup: true},
+			Oslat:         validOslatConfig(),
+			PerNodeData:   validPerNodeConfig(),
+		}
+		withKubeconfig := config.InputFlags{ClusterName: "test-cluster", Kubeconfig: "kubeconfig"}
+
+		tasks, err := ResolveFromTasksSpec(cfg, withKubeconfig)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tasks).To(HaveLen(2))
+		Expect(tasks[0].(*PerNodeDataTask).cleanup).To(BeTrue())
+		Expect(tasks[1].(*OslatTask).cleanup).To(BeTrue())
+	})
+
 	It("builds a prometheus task from inline kpis", func() {
 		cfg := config.TasksSpec{
 			Prometheus: &config.PrometheusTaskConfig{

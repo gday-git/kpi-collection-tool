@@ -243,7 +243,23 @@ prometheus:
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cfg.Orchestration.Mode).To(Equal(ModeSequential))
 				Expect(cfg.Orchestration.OnFailure).To(Equal(OnFailureContinue))
+				Expect(cfg.Orchestration.Cleanup).To(BeFalse())
 				Expect(cfg.Orchestration.Order).To(Equal([]string{TaskConfigPrometheus}))
+			})
+
+			It("accepts orchestration.cleanup", func() {
+				path := writeFile("tasks.yaml", `
+orchestration:
+  cleanup: true
+prometheus:
+  kpis:
+    - id: node-cpu
+      promquery: node_cpu_seconds_total
+`)
+				cfg, err := LoadTasksSpec(path)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cfg.Orchestration.Cleanup).To(BeTrue())
 			})
 
 			It("accepts explicit parallel mode and fail-fast on-failure", func() {

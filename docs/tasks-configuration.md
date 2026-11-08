@@ -22,6 +22,7 @@ them**. Each task type has its own configuration section; an optional
 orchestration:
   mode: sequential        # sequential (default) or parallel
   on-failure: fail-fast   # continue (default) or fail-fast
+  cleanup: false          # true deletes pods created by per-node-data, oslat, and app-recovery-time
   order:                  # optional; defaults to: prometheus, per-node-data, oslat, app-recovery-time
     - prometheus
     - per-node-data
@@ -83,6 +84,7 @@ omitted.
 |-------|--------|---------|-------------|
 | `mode` | `sequential`, `parallel` | `sequential` | Whether tasks run one at a time or concurrently. Also settable via `--parallel` on the CLI. |
 | `on-failure` | `continue`, `fail-fast` | `continue` | `continue` runs remaining tasks even if one fails; `fail-fast` stops immediately. |
+| `cleanup` | `true`, `false` | `false` | When `true`, delete pods created by per-node-data, oslat, and app-recovery-time after the task finishes, including on failure. Workload pods are not deleted. |
 | `order` | list of task names | insertion order of present tasks | Explicit execution order. Must list exactly the task sections present in the file (no extras, no omissions). |
 
 When `order` is omitted, tasks run in the fixed default order: `prometheus`,

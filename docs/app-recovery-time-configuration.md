@@ -163,6 +163,13 @@ update the `image` field accordingly.
 Requires `--kubeconfig` with admin privileges. The task creates privileged
 reboot pods and lists nodes and pods via the Kubernetes API.
 
+## Pod cleanup
+
+Reboot pods stay on the cluster after the task finishes. Set
+`orchestration.cleanup: true` to delete those reboot pods when the task
+finishes or fails. Workload pods in `workloadNamespaces` are only polled;
+they are not deleted.
+
 ## Safety considerations
 
 - **Never run against production nodes.** The task issues a hard reboot —

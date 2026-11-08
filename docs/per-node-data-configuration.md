@@ -152,3 +152,9 @@ update the `image` field accordingly.
 
 Requires `--kubeconfig` with admin privileges. The task creates privileged debug
 pods and lists all cluster nodes via the Kubernetes API.
+
+## Pod cleanup
+
+Debug pods stay on the cluster after the task finishes. Set
+`orchestration.cleanup: true` to delete them when the task finishes or fails.
+Pods in `workloadNamespaces` are only described; they are not deleted.

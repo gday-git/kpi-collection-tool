@@ -35,6 +35,7 @@ type PerNodeDataTask struct {
 	cfg          config.PerNodeDataTaskConfig
 	kubeconfig   string
 	artifactsDir string
+	cleanup      bool
 }
 
 // NewPerNodeDataTask constructs a per-node-data task.
@@ -101,6 +102,9 @@ func (t *PerNodeDataTask) collectNode(ctx context.Context, client *k8s.Clientset
 	created, err := kubernetes.CreatePod(ctx, client, t.debugPod(node))
 	if err != nil {
 		return fmt.Errorf("%s: %w", node, err)
+	}
+	if t.cleanup {
+		defer removePod(ctx, client, created.Namespace, created.Name, t.Name())
 	}
 
 	wait := t.cfg.Duration.Duration + debugWaitBuffer

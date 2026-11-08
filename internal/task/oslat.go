@@ -18,6 +18,7 @@ type OslatTask struct {
 	cfg          config.OslatTaskConfig
 	kubeconfig   string
 	artifactsDir string
+	cleanup      bool
 }
 
 // NewOslatTask constructs an oslat task.
@@ -44,6 +45,9 @@ func (t *OslatTask) Run(ctx context.Context) error {
 	created, err := kubernetes.CreatePod(ctx, client, pod)
 	if err != nil {
 		return fmt.Errorf("%s: %w", t.Name(), err)
+	}
+	if t.cleanup {
+		defer removePod(ctx, client, created.Namespace, created.Name, t.Name())
 	}
 
 	ns := created.Namespace

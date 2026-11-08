@@ -8,22 +8,46 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
-const podPollInterval = 5 * time.Second
+const (
+	podPollInterval  = 5 * time.Second
+	defaultNamespace = "default"
+)
 
 // CreatePod creates the pod. Empty namespace becomes "default".
 func CreatePod(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod) (*corev1.Pod, error) {
 	if pod.Namespace == "" {
-		pod.Namespace = "default"
+		pod.Namespace = defaultNamespace
 	}
 	created, err := client.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pod %s/%s: %w", pod.Namespace, pod.Name, err)
 	}
 	return created, nil
+}
+
+// DeletePod removes the pod immediately. A missing pod is not an error.
+// Cancelling ctx does not cancel the delete, so a task can still remove its
+// pods when the run is interrupted.
+func DeletePod(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+	grace := int64(0)
+	err := client.CoreV1().Pods(namespace).Delete(context.WithoutCancel(ctx), name, metav1.DeleteOptions{
+		GracePeriodSeconds: &grace,
+	})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to delete pod %s/%s: %w", namespace, name, err)
+	}
+	return nil
 }
 
 // PodWaitTick is called on each poll while waiting for a pod to finish.

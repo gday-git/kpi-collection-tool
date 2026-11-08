@@ -81,7 +81,9 @@ func buildOslatTask(spec config.TasksSpec, flags config.InputFlags) (Task, error
 	if spec.Oslat == nil {
 		return nil, fmt.Errorf("%s: task config is missing", config.TaskConfigOslat)
 	}
-	return NewOslatTask(*spec.Oslat, flags.Kubeconfig, database.OutputDir), nil
+	t := NewOslatTask(*spec.Oslat, flags.Kubeconfig, database.OutputDir)
+	t.cleanup = spec.Orchestration.Cleanup
+	return t, nil
 }
 
 func buildPerNodeDataTask(spec config.TasksSpec, flags config.InputFlags) (Task, error) {
@@ -91,7 +93,9 @@ func buildPerNodeDataTask(spec config.TasksSpec, flags config.InputFlags) (Task,
 	if spec.PerNodeData == nil {
 		return nil, fmt.Errorf("%s: task config is missing", config.TaskConfigPerNodeData)
 	}
-	return NewPerNodeDataTask(*spec.PerNodeData, flags.Kubeconfig, database.OutputDir), nil
+	t := NewPerNodeDataTask(*spec.PerNodeData, flags.Kubeconfig, database.OutputDir)
+	t.cleanup = spec.Orchestration.Cleanup
+	return t, nil
 }
 
 func buildAppRecoveryTimeTask(spec config.TasksSpec, flags config.InputFlags) (Task, error) {
@@ -113,5 +117,7 @@ func buildAppRecoveryTimeTask(spec config.TasksSpec, flags config.InputFlags) (T
 		return nil, fmt.Errorf("%s: %w", config.TaskConfigAppRecoveryTime, err)
 	}
 
-	return NewAppRecoveryTimeTask(cfg, flags.Kubeconfig, database.OutputDir), nil
+	t := NewAppRecoveryTimeTask(cfg, flags.Kubeconfig, database.OutputDir)
+	t.cleanup = spec.Orchestration.Cleanup
+	return t, nil
 }

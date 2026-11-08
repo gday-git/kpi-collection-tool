@@ -25,6 +25,7 @@ type AppRecoveryTimeTask struct {
 	cfg          config.AppRecoveryTimeTaskConfig
 	kubeconfig   string
 	artifactsDir string
+	cleanup      bool
 }
 
 // NewAppRecoveryTimeTask constructs an app-recovery-time task.
@@ -47,8 +48,12 @@ func (t *AppRecoveryTimeTask) Run(ctx context.Context) error {
 	taskName := t.Name()
 	for _, nodeName := range t.cfg.NodeNames {
 		output.PrintTaskProgress(taskName, fmt.Sprintf("creating reboot pod on %s", nodeName))
-		if err := kubernetes.CreateRebootPod(ctx, client, nodeName, t.cfg.Image); err != nil {
+		created, err := kubernetes.CreateRebootPod(ctx, client, nodeName, t.cfg.Image)
+		if err != nil {
 			return fmt.Errorf("%s: %w", t.Name(), err)
+		}
+		if t.cleanup {
+			defer removePod(ctx, client, created.Namespace, created.Name, taskName)
 		}
 	}
 

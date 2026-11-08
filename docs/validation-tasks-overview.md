@@ -108,6 +108,7 @@ Tasks run **sequentially** by default. You can configure:
 - **Order** — which tasks run first
 - **Parallel mode** — run all tasks concurrently
 - **Failure policy** — stop on first failure or continue
+- **Cleanup** — delete pods created by per-node-data, oslat, and app-recovery-time (`orchestration.cleanup`, default `false`)
 
 See the [orchestration section](tasks-configuration.md#orchestration) for details.
 

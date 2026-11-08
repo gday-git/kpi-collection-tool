@@ -18,7 +18,7 @@ import (
 
 const (
 	rebootPodPrefix    = "kpi-app-recovery-reboot-"
-	rebootPodNamespace = "default"
+	rebootPodNamespace = defaultNamespace
 	apiCallTimeout     = 15 * time.Second
 )
 
@@ -120,13 +120,14 @@ func newRebootPod(nodeName, image string) *corev1.Pod {
 }
 
 // CreateRebootPod schedules a privileged pod on nodeName that reboots the host.
-// The pod is not waited on after create.
-func CreateRebootPod(ctx context.Context, client kubernetes.Interface, nodeName, image string) error {
-	_, err := CreatePod(ctx, client, newRebootPod(nodeName, image))
+// The pod is not waited on after create. The returned pod is the one to delete
+// when orchestration.cleanup is set.
+func CreateRebootPod(ctx context.Context, client kubernetes.Interface, nodeName, image string) (*corev1.Pod, error) {
+	created, err := CreatePod(ctx, client, newRebootPod(nodeName, image))
 	if err != nil {
-		return fmt.Errorf("reboot pod on node %s: %w", nodeName, err)
+		return nil, fmt.Errorf("reboot pod on node %s: %w", nodeName, err)
 	}
-	return nil
+	return created, nil
 }
 
 // WaitForNodesNotReady polls until every node in nodeNames is NotReady, the API

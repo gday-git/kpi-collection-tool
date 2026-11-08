@@ -5,6 +5,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -29,6 +30,29 @@ var _ = Describe("CreatePod", func() {
 		stored, err := client.CoreV1().Pods("default").Get(context.Background(), "test-pod", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stored.Name).To(Equal("test-pod"))
+	})
+})
+
+var _ = Describe("DeletePod", func() {
+	It("deletes the pod even when the context is already cancelled", func() {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "c", Image: "img"}}},
+		}
+		client := fake.NewClientset(pod)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := DeletePod(ctx, client, "default", "test-pod")
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = client.CoreV1().Pods("default").Get(context.Background(), "test-pod", metav1.GetOptions{})
+		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+
+	It("ignores a missing pod", func() {
+		err := DeletePod(context.Background(), fake.NewClientset(), "default", "missing")
+		Expect(err).NotTo(HaveOccurred())
 	})
 })
 

@@ -17,6 +17,9 @@ kpi-collector run \
 
 > **⚠️  app-recovery-time reboots nodes.** Edit `nodeNames` in the recovery
 > fragment (or remove that task from the orchestration `order`) before running.
+>
+> Pods created by per-node-data, oslat, and app-recovery-time stay on the cluster
+> unless `orchestration.cleanup` is `true`.
 
 ## Available files
 

@@ -142,8 +142,8 @@ Paths are resolved relative to the directory containing the tasks file.
 2. **Wait** — the task polls the pod status until it reaches `Succeeded` or
    `Failed`, or until the `timeout` expires.
 3. **Collect** — pod logs are written to `oslat_logs.out`.
-4. **Cleanup** — the pod is left on the cluster (not deleted) so you can
-   inspect it afterward.
+4. **Cleanup** — the pod stays on the cluster so you can inspect it. Set
+   `orchestration.cleanup: true` to delete it when the task finishes or fails.
 
 ## Pod spec tips
 

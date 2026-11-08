@@ -36,11 +36,15 @@ const tasksFileName = "tasks.yaml"
 
 // OrchestrationConfig carries orchestration policy for a TasksSpec: how the
 // present task configs are scheduled (sequential/parallel), how failures
-// are handled, and an optional override of the default execution order.
+// are handled, whether task pods are deleted, and an optional override of
+// the default execution order.
 type OrchestrationConfig struct {
 	Mode      string   `yaml:"mode,omitempty"`
 	OnFailure string   `yaml:"on-failure,omitempty"`
 	Order     []string `yaml:"order,omitempty"`
+	// Cleanup deletes pods created by per-node-data, oslat, and app-recovery-time
+	// when the task finishes, including on failure. Default false leaves them in place.
+	Cleanup bool `yaml:"cleanup,omitempty"`
 }
 
 // PrometheusTaskConfig configures the Prometheus/Thanos KPI task. Exactly
