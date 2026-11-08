@@ -25,8 +25,6 @@ type profile struct {
 	Domains []domain
 }
 
-var validProfiles = []string{"ran", "core", "hub"}
-
 var profiles = map[string]profile{
 	"ran":  ranProfile(),
 	"core": coreProfile(),
@@ -73,7 +71,7 @@ func init() {
 	kpisCmd.AddCommand(kpisGenerateCmd)
 
 	kpisGenerateCmd.Flags().StringVarP(&kpisGenerateFlags.profile, "profile", "p", "",
-		fmt.Sprintf("cluster profile (%s)", strings.Join(validProfiles, ", ")))
+		fmt.Sprintf("cluster profile (%s)", strings.Join(config.ValidClusterTypes, ", ")))
 	kpisGenerateCmd.Flags().StringVarP(&kpisGenerateFlags.file, "file", "f", "",
 		"output file path (default: <profile>-kpis.yaml)")
 	kpisGenerateCmd.Flags().BoolVar(&kpisGenerateFlags.all, "all", false,
@@ -92,7 +90,7 @@ func runKpisGenerate(_ *cobra.Command, _ []string) error {
 	prof, ok := profiles[profileName]
 	if !ok {
 		return fmt.Errorf("unknown profile %q, valid profiles: %s",
-			profileName, strings.Join(validProfiles, ", "))
+			profileName, strings.Join(config.ValidClusterTypes, ", "))
 	}
 
 	filePath := resolveOutputFile(profileName)

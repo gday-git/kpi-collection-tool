@@ -134,12 +134,14 @@ func appendClusterChecks(checks []check) []check {
 		checks = append(checks, check{statusWarn, "Cluster name is not set (--cluster-name); required for run"})
 	}
 
-	validTypes := map[string]bool{"ran": true, "core": true, "hub": true}
-	if doctorFlags.ClusterType == "" {
-		checks = append(checks, check{statusWarn, "Cluster type is not set (--cluster-type); required for run"})
-	} else if !validTypes[doctorFlags.ClusterType] {
-		checks = append(checks, check{statusFail,
-			fmt.Sprintf("Invalid cluster type %q (must be ran, core, or hub)", doctorFlags.ClusterType)})
+	if err := config.ValidateClusterType(doctorFlags.ClusterType); err != nil {
+		if doctorFlags.ClusterType == "" {
+			checks = append(checks, check{statusWarn, "Cluster type is not set (--cluster-type); required for run"})
+		} else {
+			checks = append(checks, check{statusFail,
+				fmt.Sprintf("Invalid cluster type %q (must be %s)",
+					doctorFlags.ClusterType, strings.Join(config.ValidClusterTypes, ", "))})
+		}
 	} else {
 		checks = append(checks, check{statusPass, fmt.Sprintf("Cluster type: %s", doctorFlags.ClusterType)})
 	}
@@ -155,19 +157,23 @@ func appendAuthChecks(checks []check) []check {
 		return checks
 	}
 
-	switch {
-	case hasToken && hasKube:
-		checks = append(checks, check{statusFail,
-			"Authentication: both token/thanos-url and kubeconfig provided (pick one)"})
-	case hasToken:
+	if err := config.ValidateAuth(doctorFlags.BearerToken, doctorFlags.ThanosURL, doctorFlags.Kubeconfig); err != nil {
+		switch {
+		case hasToken && hasKube:
+			checks = append(checks, check{statusFail,
+				"Authentication: both token/thanos-url and kubeconfig provided (pick one)"})
+		case doctorFlags.BearerToken != "":
+			checks = append(checks, check{statusFail, "Authentication: --token provided without --thanos-url"})
+		case doctorFlags.ThanosURL != "":
+			checks = append(checks, check{statusFail, "Authentication: --thanos-url provided without --token"})
+		default:
+			checks = append(checks, check{statusFail, err.Error()})
+		}
+	} else if hasToken {
 		checks = append(checks, check{statusPass, "Authentication: token + thanos-url"})
-	case hasKube:
+	} else {
 		checks = append(checks, check{statusPass,
 			fmt.Sprintf("Authentication: kubeconfig (%s)", doctorFlags.Kubeconfig)})
-	case doctorFlags.BearerToken != "":
-		checks = append(checks, check{statusFail, "Authentication: --token provided without --thanos-url"})
-	case doctorFlags.ThanosURL != "":
-		checks = append(checks, check{statusFail, "Authentication: --thanos-url provided without --token"})
 	}
 
 	if doctorFlags.InsecureTLS {
@@ -177,11 +183,11 @@ func appendAuthChecks(checks []check) []check {
 }
 
 func appendTaskConfigFlagChecks(checks []check) []check {
-	if doctorFlags.TasksConfig != "" && doctorFlags.PromKPIsConfig != "" {
-		return append(checks, check{statusFail, "--tasks and --prom-kpis-config are mutually exclusive"})
-	}
-	if !doctorFlags.HasAnyTaskConfig() {
-		return append(checks, check{statusWarn, "No task config specified (use --prom-kpis-config or --tasks)"})
+	if err := config.ValidateTaskConfig(doctorFlags.TasksConfig, doctorFlags.PromKPIsConfig); err != nil {
+		if !doctorFlags.HasAnyTaskConfig() {
+			return append(checks, check{statusWarn, "No task config specified (use --prom-kpis-config or --tasks)"})
+		}
+		return append(checks, check{statusFail, err.Error()})
 	}
 	if doctorFlags.PromKPIsConfig != "" {
 		checks = append(checks, check{statusPass,
@@ -319,19 +325,8 @@ func appendFrequencyWarnings(checks []check, kpis config.KPIs) []check {
 		}
 	}
 
-	for _, kpi := range kpis.Queries {
-		if kpi.GetEffectiveQueryType() != "range" || kpi.Range == nil || kpi.Range.Since == nil {
-			continue
-		}
-		if !kpi.Range.Since.IsDuration() {
-			continue
-		}
-		freq := kpi.GetEffectiveFrequency(doctorFlags.SamplingFreq)
-		since := kpi.Range.Since.DurationValue()
-		if freq > since {
-			checks = append(checks, check{statusFail,
-				fmt.Sprintf("KPI %q: frequency %s > since %s (creates data gaps)", kpi.ID, freq, since)})
-		}
+	if err := config.ValidateRangeFrequency(kpis, doctorFlags.SamplingFreq); err != nil {
+		checks = append(checks, check{statusFail, err.Error()})
 	}
 	return checks
 }
@@ -421,6 +416,15 @@ func appendDatabaseChecks(checks []check) []check {
 			fmt.Sprintf("KPI_COLLECTOR_DB_TYPE=%q differs from --db-type=%q (flag takes precedence for run)", envType, dbType)})
 	}
 
+	pgURL := doctorFlags.PostgresURL
+	if pgURL == "" {
+		pgURL = envURL
+	}
+
+	if err := config.ValidateDatabaseType(dbType, pgURL); err != nil {
+		return append(checks, check{statusFail, err.Error()})
+	}
+
 	switch dbType {
 	case "sqlite":
 		checks = append(checks, check{statusPass, "Database type: sqlite"})
@@ -433,19 +437,7 @@ func appendDatabaseChecks(checks []check) []check {
 		}
 	case "postgres":
 		checks = append(checks, check{statusPass, "Database type: postgres"})
-		pgURL := doctorFlags.PostgresURL
-		if pgURL == "" {
-			pgURL = envURL
-		}
-		if pgURL == "" {
-			checks = append(checks, check{statusFail,
-				"PostgreSQL URL not set (use --postgres-url or KPI_COLLECTOR_DB_URL)"})
-		} else {
-			checks = append(checks, check{statusPass, "PostgreSQL URL is set"})
-		}
-	default:
-		checks = append(checks, check{statusFail,
-			fmt.Sprintf("Invalid database type: %q (must be sqlite or postgres)", dbType)})
+		checks = append(checks, check{statusPass, "PostgreSQL URL is set"})
 	}
 	return checks
 }

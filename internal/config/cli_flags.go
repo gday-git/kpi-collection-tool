@@ -2,7 +2,68 @@ package config
 
 import (
 	"fmt"
+	"strings"
+	"time"
 )
+
+// ValidClusterTypes lists all accepted cluster type values.
+var ValidClusterTypes = []string{"ran", "core", "hub"}
+
+// IsValidClusterType reports whether t is a recognised cluster type.
+func IsValidClusterType(t string) bool {
+	for _, v := range ValidClusterTypes {
+		if t == v {
+			return true
+		}
+	}
+	return false
+}
+
+// clusterTypeList formats the valid cluster types for error messages
+// using an Oxford-comma style ("'ran', 'core', or 'hub'").
+func clusterTypeList() string {
+	quoted := make([]string, len(ValidClusterTypes))
+	for i, t := range ValidClusterTypes {
+		quoted[i] = "'" + t + "'"
+	}
+	if len(quoted) <= 1 {
+		return strings.Join(quoted, "")
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + ", or " + quoted[len(quoted)-1]
+}
+
+// ValidateClusterType returns an error when t is empty or not recognised.
+func ValidateClusterType(t string) error {
+	if t == "" {
+		return fmt.Errorf("cluster-type is required: must be %s", clusterTypeList())
+	}
+	if !IsValidClusterType(t) {
+		return fmt.Errorf("invalid cluster-type '%s': must be %s", t, clusterTypeList())
+	}
+	return nil
+}
+
+// ValidateAuth checks that exactly one authentication method is provided:
+// either (token + thanos-url) or kubeconfig.
+func ValidateAuth(token, thanosURL, kubeconfig string) error {
+	valid := (token != "" && thanosURL != "" && kubeconfig == "") ||
+		(token == "" && thanosURL == "" && kubeconfig != "")
+	if !valid {
+		return fmt.Errorf("invalid flag combination: either provide --token and --thanos-url, or provide --kubeconfig")
+	}
+	return nil
+}
+
+// ValidateTaskConfig checks that exactly one task config source is set.
+func ValidateTaskConfig(tasksConfig, promKPIsConfig string) error {
+	if tasksConfig != "" && promKPIsConfig != "" {
+		return fmt.Errorf("--tasks and --prom-kpis-config are mutually exclusive")
+	}
+	if tasksConfig == "" && promKPIsConfig == "" {
+		return fmt.Errorf("either --tasks or --prom-kpis-config is required")
+	}
+	return nil
+}
 
 // ValidateFlags ensures the correct combination of flags is provided.
 // Prometheus sampling fields (frequency, duration) and database settings
@@ -13,33 +74,29 @@ func ValidateFlags(flags InputFlags) error {
 		return fmt.Errorf("cluster name is required: use --cluster-name flag")
 	}
 
-	validClusterTypes := map[string]bool{"ran": true, "core": true, "hub": true}
-	if flags.ClusterType == "" {
-		return fmt.Errorf("cluster-type is required: must be 'ran', 'core', or 'hub'")
-	}
-	if !validClusterTypes[flags.ClusterType] {
-		return fmt.Errorf("invalid cluster-type '%s': must be 'ran', 'core', or 'hub'", flags.ClusterType)
+	if err := ValidateClusterType(flags.ClusterType); err != nil {
+		return err
 	}
 
 	if flags.InsecureTLS {
 		fmt.Println("WARNING: TLS certificate verification is disabled. Use only in development environments.")
 	}
 
-	validAuthCombo := (flags.BearerToken != "" && flags.ThanosURL != "" && flags.Kubeconfig == "") ||
-		(flags.BearerToken == "" && flags.ThanosURL == "" && flags.Kubeconfig != "")
-
-	if !validAuthCombo {
-		return fmt.Errorf("invalid flag combination: either provide --token and --thanos-url, or provide --kubeconfig")
+	if err := ValidateAuth(flags.BearerToken, flags.ThanosURL, flags.Kubeconfig); err != nil {
+		return err
 	}
 
-	if flags.TasksConfig != "" && flags.PromKPIsConfig != "" {
-		return fmt.Errorf("--tasks and --prom-kpis-config are mutually exclusive")
-	}
+	return ValidateTaskConfig(flags.TasksConfig, flags.PromKPIsConfig)
+}
 
-	if !flags.HasAnyTaskConfig() {
-		return fmt.Errorf("either --tasks or --prom-kpis-config is required")
+// ValidateDatabaseType checks db-type and postgres-url consistency.
+func ValidateDatabaseType(dbType, postgresURL string) error {
+	if dbType != "sqlite" && dbType != "postgres" {
+		return fmt.Errorf("invalid db-type: must be 'sqlite' or 'postgres'")
 	}
-
+	if dbType == "postgres" && postgresURL == "" {
+		return fmt.Errorf("postgres-url is required when db-type=postgres")
+	}
 	return nil
 }
 
@@ -54,15 +111,7 @@ func ValidatePromSettings(flags InputFlags) error {
 		return fmt.Errorf("duration must be greater than 0")
 	}
 
-	if flags.DatabaseType != "sqlite" && flags.DatabaseType != "postgres" {
-		return fmt.Errorf("invalid db-type: must be 'sqlite' or 'postgres'")
-	}
-
-	if flags.DatabaseType == "postgres" && flags.PostgresURL == "" {
-		return fmt.Errorf("postgres-url is required when db-type=postgres")
-	}
-
-	return nil
+	return ValidateDatabaseType(flags.DatabaseType, flags.PostgresURL)
 }
 
 // ApplyPromTaskConfig copies Prometheus sampling settings from a tasks.yaml
@@ -103,4 +152,36 @@ func ApplyKPIsDefaults(flags *InputFlags, kpis KPIs, changedFlags map[string]boo
 	if kpis.Once != nil && !changedFlags["once"] {
 		flags.SingleRun = *kpis.Once
 	}
+}
+
+// ValidateRangeFrequency checks range queries with duration-based since lookback
+// for frequency/range mismatches. Returns an error if frequency exceeds since
+// (data gaps). Prints a warning for heavy overlap. Queries using absolute
+// start/end are skipped since their window is fixed.
+func ValidateRangeFrequency(kpis KPIs, samplingFreq time.Duration) error {
+	for _, kpi := range kpis.Queries {
+		if kpi.GetEffectiveQueryType() != "range" || kpi.Range == nil || kpi.Range.Since == nil {
+			continue
+		}
+
+		if !kpi.Range.Since.IsDuration() {
+			continue
+		}
+
+		freq := kpi.GetEffectiveFrequency(samplingFreq)
+		since := kpi.Range.Since.DurationValue()
+
+		if freq > since {
+			return fmt.Errorf("KPI '%s' has frequency %s > since %s — this creates gaps where no data is collected",
+				kpi.ID, freq, since)
+		}
+
+		if freq < since/2 {
+			overlapPercent := 100 - (100*freq)/since
+			fmt.Printf("WARNING: KPI '%s' has frequency %s with since %s — ~%d%% of each query overlaps the previous one.\n",
+				kpi.ID, freq, since, overlapPercent)
+		}
+	}
+
+	return nil
 }

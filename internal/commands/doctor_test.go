@@ -542,7 +542,7 @@ app-recovery-time:
 			checks := appendDatabaseChecks(nil)
 
 			Expect(checks[0].status).To(Equal(statusFail))
-			Expect(checks[0].message).To(ContainSubstring("Invalid database type"))
+			Expect(checks[0].message).To(ContainSubstring("invalid db-type"))
 		})
 	})
 

@@ -383,7 +383,7 @@ func prepareLoadedKPIs(kpis config.KPIs, flags config.InputFlags) (config.KPIs, 
 	if !flags.SingleRun {
 		warnFrequencyExceedsDuration(kpis, flags)
 
-		if err := validateRangeFrequency(kpis, flags); err != nil {
+		if err := config.ValidateRangeFrequency(kpis, flags.SamplingFreq); err != nil {
 			return config.KPIs{}, nil, err
 		}
 	}
@@ -494,37 +494,6 @@ func setPerNodeDataIsolcpus(spec *config.TasksSpec, cpus *config.CPUPlaceholders
 		config.TaskConfigPerNodeData,
 		strings.ReplaceAll(cpus.Reserved, "|", ","),
 		spec.PerNodeData.Isolcpus)
-	return nil
-}
-
-// validateRangeFrequency checks range queries with since lookback for frequency/range mismatches.
-// Returns an error if frequency exceeds since (data gaps), and prints a warning for heavy overlap.
-// Queries using absolute start/end are skipped since their window is fixed.
-func validateRangeFrequency(kpis config.KPIs, flags config.InputFlags) error {
-	for _, kpi := range kpis.Queries {
-		if kpi.GetEffectiveQueryType() != "range" || kpi.Range == nil || kpi.Range.Since == nil {
-			continue
-		}
-
-		if !kpi.Range.Since.IsDuration() {
-			continue
-		}
-
-		freq := kpi.GetEffectiveFrequency(flags.SamplingFreq)
-		since := kpi.Range.Since.DurationValue()
-
-		if freq > since {
-			return fmt.Errorf("KPI '%s' has frequency %s > since %s — this creates gaps where no data is collected",
-				kpi.ID, freq, since)
-		}
-
-		if freq < since/2 {
-			overlapPercent := 100 - (100*freq)/since
-			fmt.Printf("WARNING: KPI '%s' has frequency %s with since %s — ~%d%% of each query overlaps the previous one.\n",
-				kpi.ID, freq, since, overlapPercent)
-		}
-	}
-
 	return nil
 }
 
