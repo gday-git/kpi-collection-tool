@@ -130,6 +130,11 @@ func CreateRebootPod(ctx context.Context, client kubernetes.Interface, nodeName,
 	return created, nil
 }
 
+// DeleteRebootPod deletes the reboot pod for nodeName if it exists.
+func DeleteRebootPod(ctx context.Context, client kubernetes.Interface, nodeName string) error {
+	return DeletePod(ctx, client, rebootPodNamespace, rebootPodPrefix+nodeName)
+}
+
 // WaitForNodesNotReady polls until every node in nodeNames is NotReady, the API
 // is unreachable (SNO / control-plane reboot), or timeout expires.
 // onNodeNotReady is invoked at most once per node when it is first observed NotReady

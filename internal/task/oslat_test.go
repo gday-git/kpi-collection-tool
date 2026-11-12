@@ -37,7 +37,10 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		secretNS, secretName, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(secretNS).To(Equal("default"))
+		Expect(secretName).To(Equal("oslat-test-kubeconfig"))
 
 		// Secret created in the resolved (default) namespace with the kubeconfig data.
 		Expect(pod.Namespace).To(Equal("default"))
@@ -61,7 +64,8 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true, MountPath: "/kc"}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		_, _, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
 
 		c := pod.Spec.Containers[0]
 		Expect(c.VolumeMounts[0].MountPath).To(Equal("/kc"))
@@ -76,7 +80,8 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		_, _, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
 
 		init := pod.Spec.InitContainers[0]
 		Expect(init.VolumeMounts[0].MountPath).To(Equal("/kubeconfig"))
@@ -92,13 +97,13 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		err := t.injectKubeconfig(context.Background(), client, pod)
+		_, _, err := t.injectKubeconfig(context.Background(), client, pod)
 		Expect(err).To(MatchError(ContainSubstring(`volume "kubeconfig" already defined`)))
 	})
 
 	It("errors when no kubeconfig path is provided", func() {
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, "", "", "/tmp")
-		err := t.injectKubeconfig(context.Background(), fake.NewClientset(), pod)
+		_, _, err := t.injectKubeconfig(context.Background(), fake.NewClientset(), pod)
 		Expect(err).To(HaveOccurred())
 	})
 })
