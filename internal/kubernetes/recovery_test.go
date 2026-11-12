@@ -29,10 +29,10 @@ func nodeWithReady(name string, ready bool) *corev1.Node {
 }
 
 var _ = Describe("CreateRebootPod", func() {
-	It("creates a privileged reboot pod on the target node", func() {
+	It("creates a privileged, labeled reboot pod on the target node", func() {
 		client := fake.NewClientset()
 
-		created, err := CreateRebootPod(context.Background(), client, "worker-1", "ubi-minimal:latest")
+		created, err := CreateRebootPod(context.Background(), client, "worker-1", "ubi-minimal:latest", "run-7")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(created.Name).To(Equal(rebootPodPrefix + "worker-1"))
 
@@ -46,6 +46,8 @@ var _ = Describe("CreateRebootPod", func() {
 		Expect(pod.Spec.Containers[0].Image).To(Equal("ubi-minimal:latest"))
 		Expect(pod.Spec.Containers[0].Command).To(Equal([]string{"chroot", "/host", "/sbin/reboot"}))
 		Expect(*pod.Spec.Containers[0].SecurityContext.Privileged).To(BeTrue())
+		Expect(pod.Labels).To(HaveKeyWithValue(ManagedByLabel, ManagedByValue))
+		Expect(pod.Labels).To(HaveKeyWithValue(RunIDLabel, "run-7"))
 	})
 })
 

@@ -81,15 +81,15 @@ func canAccess(ctx context.Context, client kubernetes.Interface, verb, resource,
 func dryRunRebootPod(ctx context.Context, client kubernetes.Interface, nodeName, image string) error {
 	_, err := client.CoreV1().Pods(rebootPodNamespace).Create(
 		ctx,
-		newRebootPod(nodeName, image),
+		newRebootPod(nodeName, image, ""),
 		metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}},
 	)
 	return err
 }
 
-func newRebootPod(nodeName, image string) *corev1.Pod {
+func newRebootPod(nodeName, image, runID string) *corev1.Pod {
 	privileged := true
-	return &corev1.Pod{
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rebootPodPrefix + nodeName,
 			Namespace: rebootPodNamespace,
@@ -117,22 +117,19 @@ func newRebootPod(nodeName, image string) *corev1.Pod {
 			}},
 		},
 	}
+	LabelObject(&pod.ObjectMeta, runID)
+	return pod
 }
 
 // CreateRebootPod schedules a privileged pod on nodeName that reboots the host.
-// The pod is not waited on after create. The returned pod is the one to delete
-// when orchestration.cleanup is set.
-func CreateRebootPod(ctx context.Context, client kubernetes.Interface, nodeName, image string) (*corev1.Pod, error) {
-	created, err := CreatePod(ctx, client, newRebootPod(nodeName, image))
+// The pod is not waited on after create. The returned pod is labeled with the
+// run's ownership labels and is the one the caller should track for cleanup.
+func CreateRebootPod(ctx context.Context, client kubernetes.Interface, nodeName, image, runID string) (*corev1.Pod, error) {
+	created, err := CreatePod(ctx, client, newRebootPod(nodeName, image, runID))
 	if err != nil {
 		return nil, fmt.Errorf("reboot pod on node %s: %w", nodeName, err)
 	}
 	return created, nil
-}
-
-// DeleteRebootPod deletes the reboot pod for nodeName if it exists.
-func DeleteRebootPod(ctx context.Context, client kubernetes.Interface, nodeName string) error {
-	return DeletePod(ctx, client, rebootPodNamespace, rebootPodPrefix+nodeName)
 }
 
 // WaitForNodesNotReady polls until every node in nodeNames is NotReady, the API

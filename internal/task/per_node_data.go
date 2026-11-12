@@ -36,7 +36,9 @@ type PerNodeDataTask struct {
 	kubeconfig   string
 	proxyURL     string
 	artifactsDir string
-	cleanup      bool
+	runID        string
+	noCleanup    bool
+	tracker      objectTracker
 }
 
 // NewPerNodeDataTask constructs a per-node-data task.
@@ -62,13 +64,11 @@ func (t *PerNodeDataTask) Run(ctx context.Context) error {
 		return fmt.Errorf("%s: %w", t.Name(), err)
 	}
 
-	// A killed prior run leaves its debug pods behind (defers do not survive
-	// SIGKILL); sweep them so this run does not collide with stale pods.
-	deleted, err := kubernetes.DeletePodsByPrefix(ctx, client, "default", "pnd-")
-	if err != nil {
-		log.Printf("%s: warning: failed to remove leftover debug pods: %v", t.Name(), err)
-	} else if len(deleted) > 0 {
-		log.Printf("%s: removed leftover debug pods from a previous run: %v", t.Name(), deleted)
+	// Delete exactly the debug pods this task created — on every exit path —
+	// unless --nocleanup was given. Leftovers from a prior run were already
+	// removed by the pre-run sweep in the run command.
+	if !t.noCleanup {
+		defer t.tracker.DeleteAll(ctx, client, t.Name())
 	}
 
 	output.PrintTaskProgress(t.Name(), fmt.Sprintf(
@@ -115,17 +115,7 @@ func (t *PerNodeDataTask) collectNode(ctx context.Context, client *k8s.Clientset
 	if err != nil {
 		return fmt.Errorf("%s: %w", node, err)
 	}
-	if t.cleanup {
-		defer removePod(ctx, client, created.Namespace, created.Name, t.Name())
-	}
-
-	// Delete the debug pod as soon as this node's logs and artifacts are
-	// written — success or failure — so nothing outlives the task.
-	defer func() {
-		if err := kubernetes.DeletePod(context.WithoutCancel(ctx), client, created.Namespace, created.Name); err != nil {
-			log.Printf("%s: %v", t.Name(), err)
-		}
-	}()
+	t.tracker.Add("pod", created.Namespace, created.Name)
 
 	wait := t.cfg.Duration.Duration + debugWaitBuffer
 	finished, waitErr := kubernetes.WaitForPodTerminal(kubernetes.PodWaitParams{
@@ -156,7 +146,7 @@ func (t *PerNodeDataTask) collectNode(ctx context.Context, client *k8s.Clientset
 func (t *PerNodeDataTask) debugPod(node string) *corev1.Pod {
 	privileged := true
 	n := int(t.cfg.Duration.Duration / t.cfg.Interval.Duration)
-	return &corev1.Pod{
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: debugPodName(node)},
 		Spec: corev1.PodSpec{
 			NodeName:      node,
@@ -183,6 +173,8 @@ func (t *PerNodeDataTask) debugPod(node string) *corev1.Pod {
 			}},
 		},
 	}
+	kubernetes.LabelObject(&pod.ObjectMeta, t.runID)
+	return pod
 }
 
 func (t *PerNodeDataTask) writeNodeArtifacts(node, body string) error {

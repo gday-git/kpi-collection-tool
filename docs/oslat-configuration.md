@@ -140,12 +140,14 @@ Paths are resolved relative to the directory containing the tasks file.
 
 ## Pod lifecycle
 
-1. **Create** — the task creates the Pod on the cluster exactly as specified.
+1. **Create** — the task creates the Pod on the cluster exactly as specified,
+   labeled `app.kubernetes.io/managed-by=kpi-collector`.
 2. **Wait** — the task polls the pod status until it reaches `Succeeded` or
    `Failed`, or until the `timeout` expires.
 3. **Collect** — pod logs are written to `oslat_logs.out`.
-4. **Cleanup** — the pod stays on the cluster so you can inspect it. Set
-   `orchestration.cleanup: true` to delete it when the task finishes or fails.
+4. **Cleanup** — when the task finishes (success, failure, or Ctrl+C) the pod
+   and its kubeconfig Secret are deleted. Run with `--nocleanup` to keep them
+   on the cluster for inspection.
 
 ## Pod spec tips
 
@@ -194,10 +196,15 @@ oslat:
 The tool creates a Secret named `<pod-name>-kubeconfig` from the run's
 `--kubeconfig`, mounts it read-only at `mountPath`, and sets `KUBECONFIG` on every
 container, init containers included (an existing `KUBECONFIG` env is left
-untouched). When the task finishes — successfully or not — the pod and the
-Secret are deleted, so no credentials remain in the cluster afterwards. Before
-the task starts, a pod or Secret left behind by a killed prior run is removed,
-so re-runs do not collide with stale objects.
+untouched). The pod and the Secret are labeled with the run's ownership labels.
+
+When the task finishes — successfully or not — the pod and the Secret are
+deleted, so no credentials remain in the cluster afterwards. With
+`--nocleanup`, both stay on the cluster instead; note the Secret is a **live
+credential** — remove it manually or let the next run remove it. Either way,
+the next run deletes any labeled leftovers at startup, before creating
+anything, so re-runs never collide with stale objects. See
+[resource cleanup](tasks-configuration.md#resource-cleanup-and-ownership).
 
 > **Proxy note:** the mounted kubeconfig runs in-cluster, so it must **not**
 > contain a `proxy-url` pointing at a laptop-local proxy (it is unreachable from

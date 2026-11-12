@@ -23,8 +23,12 @@ cluster and collects:
 
 All artifacts are written under `--artifacts-dir`.
 
-Debug pods are deleted as soon as a node's collection finishes, and any debug
-pods left behind by a killed prior run are removed before the task starts.
+Debug pods are labeled `app.kubernetes.io/managed-by=kpi-collector` and stay on
+the cluster for the task's duration. When the task finishes — successfully or
+not — they are deleted; run with `--nocleanup` to keep them for inspection.
+Either way, the next run removes any labeled leftovers at startup, before
+creating anything, so re-runs never collide with stale objects. See
+[resource cleanup](tasks-configuration.md#resource-cleanup-and-ownership).
 
 ## Configuration format
 
@@ -158,6 +162,7 @@ pods and lists all cluster nodes via the Kubernetes API.
 
 ## Pod cleanup
 
-Debug pods stay on the cluster after the task finishes. Set
-`orchestration.cleanup: true` to delete them when the task finishes or fails.
-Pods in `workloadNamespaces` are only described; they are not deleted.
+Debug pods are deleted when the task finishes or fails. Run with
+`--nocleanup` to keep them on the cluster for inspection; the next run's
+startup sweep removes them before it creates anything. Pods in
+`workloadNamespaces` are only described; they are never deleted.

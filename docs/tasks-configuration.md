@@ -22,7 +22,6 @@ them**. Each task type has its own configuration section; an optional
 orchestration:
   mode: sequential        # sequential (default) or parallel
   on-failure: fail-fast   # continue (default) or fail-fast
-  cleanup: false          # true deletes pods created by per-node-data, oslat, and app-recovery-time
   order:                  # optional; defaults to: prometheus, per-node-data, oslat, app-recovery-time
     - prometheus
     - per-node-data
@@ -84,11 +83,44 @@ omitted.
 |-------|--------|---------|-------------|
 | `mode` | `sequential`, `parallel` | `sequential` | Whether tasks run one at a time or concurrently. Also settable via `--parallel` on the CLI. |
 | `on-failure` | `continue`, `fail-fast` | `continue` | `continue` runs remaining tasks even if one fails; `fail-fast` stops immediately. |
-| `cleanup` | `true`, `false` | `false` | When `true`, delete pods created by per-node-data, oslat, and app-recovery-time after the task finishes, including on failure. Workload pods are not deleted. |
 | `order` | list of task names | insertion order of present tasks | Explicit execution order. Must list exactly the task sections present in the file (no extras, no omissions). |
 
 When `order` is omitted, tasks run in the fixed default order: `prometheus`,
 `per-node-data`, `oslat`, `app-recovery-time` (only those present in the file).
+
+## Resource cleanup and ownership
+
+Every cluster object the tool creates — debug pods, oslat pods, reboot pods,
+kubeconfig Secrets — is labeled `app.kubernetes.io/managed-by=kpi-collector`
+(plus a per-run `kpi-collector.io/run-id` label for diagnostics).
+
+Cleanup behavior, in order:
+
+1. **Startup sweep (always).** Before any task runs, the collector deletes
+   every pod and Secret carrying the managed-by label, across all
+   namespaces. This removes leftovers from a prior run, whether they were
+   kept deliberately (`--nocleanup`) or orphaned by a killed process. If any
+   deletion fails, the run refuses to start.
+2. **Exit cleanup (default).** When a task finishes — success, failure, or
+   Ctrl+C — the collector deletes exactly the objects that task created.
+   Nothing without the managed-by label is ever touched.
+3. **`--nocleanup` (opt-out).** With this flag, exit cleanup is skipped and
+   the run's pods and Secrets stay on the cluster for inspection — including
+   the oslat kubeconfig Secret, which is a **live credential**; remove it
+   manually or let the next run's startup sweep remove it.
+
+> [!NOTE]
+> `orchestration.cleanup` from earlier releases was replaced by the inverted
+> `--nocleanup` CLI flag: deletion is now the default.
+
+## Concurrent runs
+
+Concurrent `kpi-collector` runs against the same cluster are **unsupported**.
+There is no cross-run lock: a second run's startup sweep cannot tell another
+live run's pods from a dead run's leftovers, so it deletes them, and the first
+run fails with pod-not-found errors mid-task. (Unrelated, unlabeled workloads
+are never touched.) Run one collector per cluster at a time and coordinate
+between users.
 
 > [!NOTE]
 > The YAML examples below use illustrative values (durations, namespaces,

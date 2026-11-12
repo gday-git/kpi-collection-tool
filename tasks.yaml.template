@@ -22,8 +22,11 @@
 # Orchestration fields (all optional):
 #   mode:        "sequential" (default) or "parallel"
 #   on-failure:  "continue" (default) or "fail-fast"
-#   cleanup:     false (default). true deletes pods created by per-node-data, oslat, and app-recovery-time
 #   order:       explicit execution order (must list exactly the tasks present)
+#
+# Cleanup: created pods/secrets are labeled managed-by=kpi-collector and
+# deleted at task exit by default. Use the --nocleanup CLI flag to keep them;
+# the next run removes labeled leftovers at startup either way.
 #
 # configFile pattern:
 #   Each task supports inline fields OR a configFile reference (not both).

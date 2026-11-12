@@ -108,19 +108,20 @@ var _ = Describe("ResolveFromTasksSpec", func() {
 
 	flags := config.InputFlags{ClusterName: "test-cluster"}
 
-	It("passes orchestration.cleanup to pod-creating tasks", func() {
+	It("passes runID and noCleanup to pod-creating tasks", func() {
 		cfg := config.TasksSpec{
-			Orchestration: config.OrchestrationConfig{Cleanup: true},
-			Oslat:         validOslatConfig(),
-			PerNodeData:   validPerNodeConfig(),
+			Oslat:       validOslatConfig(),
+			PerNodeData: validPerNodeConfig(),
 		}
-		withKubeconfig := config.InputFlags{ClusterName: "test-cluster", Kubeconfig: "kubeconfig"}
+		withKubeconfig := config.InputFlags{ClusterName: "test-cluster", Kubeconfig: "kubeconfig", RunID: "run-1", NoCleanup: true}
 
 		tasks, err := ResolveFromTasksSpec(cfg, withKubeconfig)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tasks).To(HaveLen(2))
-		Expect(tasks[0].(*PerNodeDataTask).cleanup).To(BeTrue())
-		Expect(tasks[1].(*OslatTask).cleanup).To(BeTrue())
+		Expect(tasks[0].(*PerNodeDataTask).runID).To(Equal("run-1"))
+		Expect(tasks[0].(*PerNodeDataTask).noCleanup).To(BeTrue())
+		Expect(tasks[1].(*OslatTask).runID).To(Equal("run-1"))
+		Expect(tasks[1].(*OslatTask).noCleanup).To(BeTrue())
 	})
 
 	It("builds a prometheus task from inline kpis", func() {

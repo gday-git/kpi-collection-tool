@@ -57,18 +57,25 @@ func DeletePod(ctx context.Context, client kubernetes.Interface, namespace, name
 
 // CreateOrUpdateSecret creates the named secret, or updates it if it already
 // exists. Updates go through the fetched object so its ResourceVersion is
-// preserved — the API server rejects updates that omit it.
-func CreateOrUpdateSecret(ctx context.Context, client kubernetes.Interface, namespace, name string, data map[string][]byte) error {
+// preserved — the API server rejects updates that omit it. The labels param
+// (may be nil) is stamped on the object in both paths.
+func CreateOrUpdateSecret(ctx context.Context, client kubernetes.Interface, namespace, name string, data map[string][]byte, labels map[string]string) error {
 	existing, err := client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
 		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels},
 			Data:       data,
 		}
 		_, err = client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 	case err == nil:
 		existing.Data = data
+		if existing.Labels == nil {
+			existing.Labels = map[string]string{}
+		}
+		for k, v := range labels {
+			existing.Labels[k] = v
+		}
 		_, err = client.CoreV1().Secrets(namespace).Update(ctx, existing, metav1.UpdateOptions{})
 	}
 	if err != nil {
@@ -101,27 +108,6 @@ func waitForPodDeleted(ctx context.Context, client kubernetes.Interface, namespa
 		case <-ticker.C:
 		}
 	}
-}
-
-// DeletePodsByPrefix deletes every pod in namespace whose name starts with
-// prefix, returning the deleted names. Useful to sweep leftovers from a killed
-// prior run; an empty result means there was nothing to clean.
-func DeletePodsByPrefix(ctx context.Context, client kubernetes.Interface, namespace, prefix string) ([]string, error) {
-	list, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pods in %s: %w", namespace, err)
-	}
-	var deleted []string
-	for _, pod := range list.Items {
-		if !strings.HasPrefix(pod.Name, prefix) {
-			continue
-		}
-		if err := DeletePod(ctx, client, namespace, pod.Name); err != nil {
-			return deleted, err
-		}
-		deleted = append(deleted, pod.Name)
-	}
-	return deleted, nil
 }
 
 // DeleteSecret deletes the secret if it exists; NotFound is not an error.

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -118,6 +119,9 @@ func init() {
 	runCmd.Flags().BoolVar(&flags.Parallel, "parallel", false,
 		"run tasks concurrently instead of sequentially (also settable via orchestration.mode in a tasks file)")
 
+	runCmd.Flags().BoolVar(&flags.NoCleanup, "nocleanup", false,
+		"keep pods and secrets this run creates on the cluster after it finishes (they are removed by the next run's startup sweep)")
+
 	// Skip interactive prompts
 	runCmd.Flags().BoolVarP(&flags.SkipPrompts, "yes", "y", false,
 		"skip interactive prompts (e.g. category advisory)")
@@ -161,6 +165,7 @@ func runTasks(cmd *cobra.Command, args []string) error {
 
 	// Initialize logger with timestamped file in the artifacts directory
 	timestamp := time.Now().Format("2006-01-02-150405")
+	flags.RunID = timestamp
 	logFile := filepath.Join(database.OutputDir, fmt.Sprintf("kpi-%s.log", timestamp))
 	logF, err := logger.InitLogger(logFile)
 	if err != nil {
@@ -206,6 +211,14 @@ func runTasks(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Database: %s\n", databaseLocation(flags))
 
+	// Remove any leftovers from a previous run — kept via --nocleanup or
+	// orphaned by SIGKILL — before this run creates anything. Only objects
+	// carrying the tool's managed-by label are touched. A failure to delete
+	// is fatal: proceeding would collide with the stale objects.
+	if err := sweepLeftovers(&flags); err != nil {
+		return err
+	}
+
 	failedTasks := runAllTasks(cmd, tasks, parallel, failFast)
 
 	absOutputDir, err := filepath.Abs(database.OutputDir)
@@ -239,6 +252,29 @@ func changedPromFlags(cmd *cobra.Command) map[string]bool {
 		}
 	}
 	return changed
+}
+
+// sweepLeftovers removes pods and Secrets labeled as created by a previous
+// kpi-collector run, so this run cannot collide with stale objects. Skipped
+// when no kubeconfig is available (prom-only runs with manual credentials
+// create no cluster objects).
+func sweepLeftovers(flags *config.InputFlags) error {
+	if flags.Kubeconfig == "" {
+		return nil
+	}
+	client, err := kubernetes.ClientsetFromKubeconfig(flags.Kubeconfig, flags.ProxyURL)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client for leftover sweep: %w", err)
+	}
+	removed, err := kubernetes.SweepManagedObjects(context.Background(), client)
+	if err != nil {
+		return fmt.Errorf("refusing to start: %w", err)
+	}
+	if len(removed) > 0 {
+		fmt.Printf("Removed leftovers from a previous run: %s\n", strings.Join(removed, ", "))
+		log.Printf("Removed leftovers from a previous run: %s", strings.Join(removed, ", "))
+	}
+	return nil
 }
 
 // setupKubeconfigAuthIfNeeded discovers Thanos and a token before tasks are

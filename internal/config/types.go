@@ -138,6 +138,8 @@ type InputFlags struct {
 	SkipPrompts    bool   // skip interactive prompts (--yes/-y)
 	TarArtifacts   bool   // create .tar.gz of artifacts dir after run
 	ProxyURL       string // proxy URL for Thanos + Kubernetes API traffic (http/https/socks5); overrides kubeconfig proxy-url
+	NoCleanup      bool   // keep created pods/secrets on the cluster after the run (--nocleanup)
+	RunID          string // identifies this run in object labels and logs; set programmatically, not a CLI flag
 }
 
 // HasAnyTaskConfig returns true if at least one task config flag is set.

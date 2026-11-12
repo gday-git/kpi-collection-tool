@@ -165,10 +165,12 @@ reboot pods and lists nodes and pods via the Kubernetes API.
 
 ## Pod cleanup
 
-Reboot pods stay on the cluster after the task finishes. Set
-`orchestration.cleanup: true` to delete those reboot pods when the task
-finishes or fails. Workload pods in `workloadNamespaces` are only polled;
-they are not deleted.
+Reboot pods are labeled `app.kubernetes.io/managed-by=kpi-collector` and
+deleted when the task finishes or fails — only the pods this run created, never
+pods another process left behind. Run with `--nocleanup` to keep them for
+inspection; the next run's startup sweep removes labeled leftovers before it
+creates anything. Workload pods in `workloadNamespaces` are only polled; they
+are never deleted.
 
 ## Safety considerations
 

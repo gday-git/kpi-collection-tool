@@ -82,7 +82,8 @@ func buildOslatTask(spec config.TasksSpec, flags config.InputFlags) (Task, error
 		return nil, fmt.Errorf("%s: task config is missing", config.TaskConfigOslat)
 	}
 	t := NewOslatTask(*spec.Oslat, flags.Kubeconfig, flags.ProxyURL, database.OutputDir)
-	t.cleanup = spec.Orchestration.Cleanup
+	t.runID = flags.RunID
+	t.noCleanup = flags.NoCleanup
 	return t, nil
 }
 
@@ -94,7 +95,8 @@ func buildPerNodeDataTask(spec config.TasksSpec, flags config.InputFlags) (Task,
 		return nil, fmt.Errorf("%s: task config is missing", config.TaskConfigPerNodeData)
 	}
 	t := NewPerNodeDataTask(*spec.PerNodeData, flags.Kubeconfig, flags.ProxyURL, database.OutputDir)
-	t.cleanup = spec.Orchestration.Cleanup
+	t.runID = flags.RunID
+	t.noCleanup = flags.NoCleanup
 	return t, nil
 }
 
@@ -118,6 +120,7 @@ func buildAppRecoveryTimeTask(spec config.TasksSpec, flags config.InputFlags) (T
 	}
 
 	t := NewAppRecoveryTimeTask(cfg, flags.Kubeconfig, flags.ProxyURL, database.OutputDir)
-	t.cleanup = spec.Orchestration.Cleanup
+	t.runID = flags.RunID
+	t.noCleanup = flags.NoCleanup
 	return t, nil
 }

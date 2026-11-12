@@ -60,7 +60,7 @@ var _ = Describe("CreateOrUpdateSecret", func() {
 	It("creates the secret when it does not exist", func() {
 		client := fake.NewClientset()
 
-		Expect(CreateOrUpdateSecret(context.Background(), client, "default", "sec", map[string][]byte{"k": []byte("v1")})).To(Succeed())
+		Expect(CreateOrUpdateSecret(context.Background(), client, "default", "sec", map[string][]byte{"k": []byte("v1")}, nil)).To(Succeed())
 
 		sec, err := client.CoreV1().Secrets("default").Get(context.Background(), "sec", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
@@ -69,13 +69,13 @@ var _ = Describe("CreateOrUpdateSecret", func() {
 
 	It("updates an existing secret, preserving its resourceVersion", func() {
 		client := fake.NewClientset()
-		Expect(CreateOrUpdateSecret(context.Background(), client, "default", "sec", map[string][]byte{"k": []byte("v1")})).To(Succeed())
+		Expect(CreateOrUpdateSecret(context.Background(), client, "default", "sec", map[string][]byte{"k": []byte("v1")}, nil)).To(Succeed())
 		before, err := client.CoreV1().Secrets("default").Get(context.Background(), "sec", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
 		// The retry-run scenario: the secret already exists with a
 		// resourceVersion, and the update must carry it.
-		Expect(CreateOrUpdateSecret(context.Background(), client, "default", "sec", map[string][]byte{"k": []byte("v2")})).To(Succeed())
+		Expect(CreateOrUpdateSecret(context.Background(), client, "default", "sec", map[string][]byte{"k": []byte("v2")}, nil)).To(Succeed())
 
 		after, err := client.CoreV1().Secrets("default").Get(context.Background(), "sec", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
@@ -98,32 +98,6 @@ var _ = Describe("DeleteSecret", func() {
 	It("treats a missing secret as a no-op", func() {
 		client := fake.NewClientset()
 		Expect(DeleteSecret(context.Background(), client, "default", "never-existed")).To(Succeed())
-	})
-})
-
-var _ = Describe("DeletePodsByPrefix", func() {
-	It("deletes only the pods whose name matches the prefix", func() {
-		pnd1 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pnd-node-1", Namespace: "default"}}
-		pnd2 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pnd-node-2", Namespace: "default"}}
-		other := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "oslat-test", Namespace: "default"}}
-		client := fake.NewClientset(pnd1, pnd2, other)
-
-		deleted, err := DeletePodsByPrefix(context.Background(), client, "default", "pnd-")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(deleted).To(ConsistOf("pnd-node-1", "pnd-node-2"))
-
-		_, err = client.CoreV1().Pods("default").Get(context.Background(), "pnd-node-1", metav1.GetOptions{})
-		Expect(apierrors.IsNotFound(err)).To(BeTrue())
-		_, err = client.CoreV1().Pods("default").Get(context.Background(), "oslat-test", metav1.GetOptions{})
-		Expect(err).NotTo(HaveOccurred())
-	})
-
-	It("returns nothing when there is nothing to clean", func() {
-		client := fake.NewClientset()
-
-		deleted, err := DeletePodsByPrefix(context.Background(), client, "default", "pnd-")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(deleted).To(BeEmpty())
 	})
 })
 
