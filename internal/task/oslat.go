@@ -45,6 +45,14 @@ func (t *OslatTask) Run(ctx context.Context) error {
 		return fmt.Errorf("%s: %w", t.Name(), err)
 	}
 
+	// Delete exactly the objects this task creates — pod and kubeconfig
+	// Secret — on every exit path, including failures between the Secret's
+	// creation and the pod's, unless --nocleanup was given. WithoutCancel
+	// keeps the deletion working when the run was aborted mid-flight.
+	if !t.noCleanup {
+		defer t.tracker.DeleteAll(ctx, client, t.Name())
+	}
+
 	pod := t.cfg.Pod.DeepCopy()
 	if pod.APIVersion == "" {
 		pod.APIVersion = "v1"
@@ -65,13 +73,6 @@ func (t *OslatTask) Run(ctx context.Context) error {
 		return fmt.Errorf("%s: %w", t.Name(), err)
 	}
 	t.tracker.Add("pod", created.Namespace, created.Name)
-
-	// Delete exactly the objects this task created — pod and kubeconfig
-	// Secret — on every exit path, unless --nocleanup was given. WithoutCancel
-	// keeps the deletion working when the run was aborted mid-flight.
-	if !t.noCleanup {
-		defer t.tracker.DeleteAll(ctx, client, t.Name())
-	}
 
 	ns := created.Namespace
 	output.PrintTaskProgress(t.Name(), fmt.Sprintf("waiting for pod %s/%s (timeout=%s)", ns, created.Name, t.cfg.Timeout))
@@ -114,6 +115,13 @@ func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, 
 	if t.kubeconfig == "" {
 		return fmt.Errorf("mountKubeconfig is set but --kubeconfig was not provided")
 	}
+	// Validate the pod spec before creating anything in the cluster, so a
+	// malformed spec cannot leave an orphaned secret behind.
+	if hasVolume(pod.Spec.Volumes, kubeconfigVolumeName) {
+		return fmt.Errorf(
+			"volume %q already defined in the pod spec; rename it or disable mountKubeconfig",
+			kubeconfigVolumeName)
+	}
 	data, err := os.ReadFile(t.kubeconfig)
 	if err != nil {
 		return fmt.Errorf("failed to read kubeconfig %q: %w", t.kubeconfig, err)
@@ -124,12 +132,15 @@ func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, 
 		ns = "default"
 		pod.Namespace = ns
 	}
-	secretName := pod.Name + "-kubeconfig"
 	labels := map[string]string{
 		kubernetes.ManagedByLabel: kubernetes.ManagedByValue,
 		kubernetes.RunIDLabel:     t.runID,
 	}
-	if err := kubernetes.CreateOrUpdateSecret(ctx, client, ns, secretName, map[string][]byte{"kubeconfig": data}, labels); err != nil {
+	// The base name may be taken by a foreign secret; CreateOwnedSecret then
+	// allocates the next free variant and hands back the name actually used.
+	secretName, err := kubernetes.CreateOwnedSecret(ctx, client, ns,
+		pod.Name+"-kubeconfig", map[string][]byte{"kubeconfig": data}, labels)
+	if err != nil {
 		return err
 	}
 	t.tracker.Add("secret", ns, secretName)
@@ -139,11 +150,6 @@ func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, 
 		mountPath = defaultKubeconfigMount
 	}
 
-	if hasVolume(pod.Spec.Volumes, kubeconfigVolumeName) {
-		return fmt.Errorf(
-			"volume %q already defined in the pod spec; rename it or disable mountKubeconfig",
-			kubeconfigVolumeName)
-	}
 	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 		Name: kubeconfigVolumeName,
 		VolumeSource: corev1.VolumeSource{
