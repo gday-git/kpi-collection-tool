@@ -96,6 +96,15 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		Expect(err).To(MatchError(ContainSubstring(`volume "kubeconfig" already defined`)))
 	})
 
+	It("errors when a container already defines a kubeconfig volumeMount", func() {
+		pod.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{Name: "kubeconfig", MountPath: "/other"}}
+		client := fake.NewClientset()
+		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
+
+		err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).To(MatchError(ContainSubstring(`volumeMount "kubeconfig" already defined`)))
+	})
+
 	It("errors when no kubeconfig path is provided", func() {
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, "", "", "/tmp")
 		err := t.injectKubeconfig(context.Background(), fake.NewClientset(), pod)

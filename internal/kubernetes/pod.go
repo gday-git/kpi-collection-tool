@@ -62,6 +62,16 @@ func CreateOrUpdateSecret(ctx context.Context, client kubernetes.Interface, name
 			Data:       data,
 		}
 		_, err = client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+		// Another run may have created the same secret between our Get and
+		// Create — fall through to the update path instead of failing.
+		if apierrors.IsAlreadyExists(err) {
+			existing, err = client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to create/update secret %s/%s: %w", namespace, name, err)
+			}
+			existing.Data = data
+			_, err = client.CoreV1().Secrets(namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		}
 	case err == nil:
 		existing.Data = data
 		_, err = client.CoreV1().Secrets(namespace).Update(ctx, existing, metav1.UpdateOptions{})

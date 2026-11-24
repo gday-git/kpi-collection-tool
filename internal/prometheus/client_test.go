@@ -301,6 +301,13 @@ var _ = Describe("Client", func() {
 			Expect(promClient).To(BeNil())
 		})
 
+		It("should reject a proxy URL without a valid scheme", func() {
+			promClient, err := setupPromClient("thanos.example.com", "token", "myproxy.example.com:8080", true)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported scheme"))
+			Expect(promClient).To(BeNil())
+		})
+
 		// Test with insecure TLS disabled
 		It("should create client with insecure TLS disabled", func() {
 			// insecureTLS set to false

@@ -132,6 +132,70 @@ users:
 			Expect(restConfig.BearerToken).To(Equal("test-token"))
 			Expect(restConfig.Insecure).To(BeTrue())
 		})
+
+		It("should successfully create a clientset with a valid proxy URL", func() {
+			validConfig := `
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:6443
+    insecure-skip-tls-verify: true
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+    token: test-token
+`
+			err := os.WriteFile(kubeconfigPath, []byte(validConfig), 0644)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("We setup a Kubernetes client with a scheme-qualified proxy URL")
+			clientset, err := ClientsetFromKubeconfig(kubeconfigPath, "http://127.0.0.1:8080")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(clientset).NotTo(BeNil())
+		})
+
+		It("should return an error when the proxy URL is missing a valid scheme", func() {
+			validConfig := `
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:6443
+    insecure-skip-tls-verify: true
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+    token: test-token
+`
+			err := os.WriteFile(kubeconfigPath, []byte(validConfig), 0644)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("We setup a Kubernetes client with a scheme-less proxy URL")
+			clientset, err := ClientsetFromKubeconfig(kubeconfigPath, "myproxy.example.com:8080")
+
+			// url.Parse accepts scheme-less URLs like "host:8080" by reading
+			// "host" as the scheme; the proxy transport would then silently
+			// fail at request time, so unsupported schemes are rejected early.
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported scheme"))
+			Expect(clientset).To(BeNil())
+		})
 	})
 
 	Describe("getThanosURL", func() {

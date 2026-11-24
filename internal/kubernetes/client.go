@@ -63,6 +63,11 @@ func ClientsetFromKubeconfig(kubeconfigPath, proxyURL string) (*kubernetes.Clien
 		if err != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", proxyURL, err)
 		}
+		if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "socks5" {
+			return nil, fmt.Errorf(
+				"invalid proxy URL %q: unsupported scheme %q (use http://, https:// or socks5://)",
+				proxyURL, u.Scheme)
+		}
 		config.Proxy = http.ProxyURL(u)
 	}
 

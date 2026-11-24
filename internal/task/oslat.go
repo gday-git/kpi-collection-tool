@@ -130,6 +130,12 @@ func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, 
 			"volume %q already defined in the pod spec; rename it or disable mountKubeconfig",
 			kubeconfigVolumeName)
 	}
+	if hasVolumeMount(pod.Spec.Containers, kubeconfigVolumeName) ||
+		hasVolumeMount(pod.Spec.InitContainers, kubeconfigVolumeName) {
+		return fmt.Errorf(
+			"volumeMount %q already defined in the pod spec; rename it or disable mountKubeconfig",
+			kubeconfigVolumeName)
+	}
 	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 		Name: kubeconfigVolumeName,
 		VolumeSource: corev1.VolumeSource{
@@ -163,6 +169,19 @@ func hasEnv(env []corev1.EnvVar, name string) bool {
 	for _, e := range env {
 		if e.Name == name {
 			return true
+		}
+	}
+	return false
+}
+
+// hasVolumeMount reports whether a container already mounts a volume with the
+// given name.
+func hasVolumeMount(containers []corev1.Container, name string) bool {
+	for i := range containers {
+		for _, vm := range containers[i].VolumeMounts {
+			if vm.Name == name {
+				return true
+			}
 		}
 	}
 	return false

@@ -7,7 +7,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -81,6 +84,34 @@ var _ = Describe("CreateOrUpdateSecret", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(after.Data).To(HaveKeyWithValue("k", []byte("v2")))
 		Expect(after.ResourceVersion).To(Equal(before.ResourceVersion))
+	})
+
+	It("falls back to update when a concurrent run creates the secret first", func() {
+		client := fake.NewClientset()
+		// The secret already exists in the tracker, so Create returns
+		// AlreadyExists; the first Get must simulate the race by reporting
+		// NotFound, the second (the fallback) passes through.
+		seed := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "sec", Namespace: "default"},
+			Data:       map[string][]byte{"k": []byte("stale")},
+		}
+		_, err := client.CoreV1().Secrets("default").Create(context.Background(), seed, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		gets := 0
+		client.PrependReactor("get", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			gets++
+			if gets == 1 {
+				return true, nil, apierrors.NewNotFound(schema.GroupResource{Resource: "secrets"}, "sec")
+			}
+			return false, nil, nil
+		})
+
+		Expect(CreateOrUpdateSecret(context.Background(), client, "default", "sec", map[string][]byte{"k": []byte("v")})).To(Succeed())
+
+		sec, err := client.CoreV1().Secrets("default").Get(context.Background(), "sec", metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sec.Data).To(HaveKeyWithValue("k", []byte("v")))
 	})
 })
 
