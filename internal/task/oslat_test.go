@@ -2,8 +2,13 @@ package task
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,7 +42,9 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		secretName, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(secretName).To(Equal("oslat-test-kubeconfig"))
 
 		// Secret created in the resolved (default) namespace with the kubeconfig data.
 		Expect(pod.Namespace).To(Equal("default"))
@@ -61,7 +68,8 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true, MountPath: "/kc"}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		_, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
 
 		c := pod.Spec.Containers[0]
 		Expect(c.VolumeMounts[0].MountPath).To(Equal("/kc"))
@@ -76,7 +84,8 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		Expect(t.injectKubeconfig(context.Background(), client, pod)).To(Succeed())
+		_, err := t.injectKubeconfig(context.Background(), client, pod)
+		Expect(err).NotTo(HaveOccurred())
 
 		init := pod.Spec.InitContainers[0]
 		Expect(init.VolumeMounts[0].MountPath).To(Equal("/kubeconfig"))
@@ -92,8 +101,13 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		err := t.injectKubeconfig(context.Background(), client, pod)
+		_, err := t.injectKubeconfig(context.Background(), client, pod)
 		Expect(err).To(MatchError(ContainSubstring(`volume "kubeconfig" already defined`)))
+
+		// Validation runs before creation, so a rejected spec leaves no secret.
+		secrets, listErr := client.CoreV1().Secrets("default").List(context.Background(), metav1.ListOptions{})
+		Expect(listErr).NotTo(HaveOccurred())
+		Expect(secrets.Items).To(BeEmpty())
 	})
 
 	It("errors when a container already defines a kubeconfig volumeMount", func() {
@@ -101,13 +115,94 @@ var _ = Describe("OslatTask injectKubeconfig", func() {
 		client := fake.NewClientset()
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, kubeconfigPath, "", "/tmp")
 
-		err := t.injectKubeconfig(context.Background(), client, pod)
+		_, err := t.injectKubeconfig(context.Background(), client, pod)
 		Expect(err).To(MatchError(ContainSubstring(`volumeMount "kubeconfig" already defined`)))
+
+		secrets, listErr := client.CoreV1().Secrets("default").List(context.Background(), metav1.ListOptions{})
+		Expect(listErr).NotTo(HaveOccurred())
+		Expect(secrets.Items).To(BeEmpty())
 	})
 
 	It("errors when no kubeconfig path is provided", func() {
 		t := NewOslatTask(config.OslatTaskConfig{MountKubeconfig: true}, "", "", "/tmp")
-		err := t.injectKubeconfig(context.Background(), fake.NewClientset(), pod)
+		_, err := t.injectKubeconfig(context.Background(), fake.NewClientset(), pod)
 		Expect(err).To(HaveOccurred())
+	})
+})
+
+var _ = Describe("OslatTask Run secret cleanup", func() {
+	It("deletes the kubeconfig secret when pod creation fails", func() {
+		var mu sync.Mutex
+		deleted := []string{}
+		notFound := `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"NotFound","code":404}`
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch {
+			case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/secrets/"):
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(notFound))
+			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/secrets"):
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{}`))
+			case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/secrets/"):
+				mu.Lock()
+				deleted = append(deleted, r.URL.Path)
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{}`))
+			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pods"):
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"InternalError","code":500,"message":"pod create rejected"}`))
+			default:
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(notFound))
+			}
+		}))
+		defer srv.Close()
+
+		// Kubeconfig fixture pointing at the test API server; it doubles as the
+		// file mountKubeconfig turns into a Secret.
+		dir := GinkgoT().TempDir()
+		kcPath := filepath.Join(dir, "kubeconfig")
+		kubeconfig := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: %s
+    insecure-skip-tls-verify: true
+  name: test
+contexts:
+- context:
+    cluster: test
+    user: test
+  name: test
+current-context: test
+users:
+- name: test
+  user:
+    token: test
+`, srv.URL)
+		Expect(os.WriteFile(kcPath, []byte(kubeconfig), 0600)).To(Succeed())
+
+		t := NewOslatTask(config.OslatTaskConfig{
+			MountKubeconfig: true,
+			Pod: &config.Pod{
+				Pod: corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "oslat-clean"},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "c", Image: "img"}}},
+				},
+			},
+		}, kcPath, "", dir)
+		t.cleanup = true
+
+		// CreatePod fails against the test server; the cleanup defer must
+		// still delete the secret the task created before that failure.
+		err := t.Run(context.Background())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("failed to create pod"))
+
+		mu.Lock()
+		defer mu.Unlock()
+		Expect(deleted).To(ConsistOf("/api/v1/namespaces/default/secrets/oslat-clean-kubeconfig"))
 	})
 })

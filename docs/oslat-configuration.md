@@ -195,6 +195,12 @@ The tool creates a Secret named `<pod-name>-kubeconfig` from the run's
 `--kubeconfig`, mounts it read-only at `mountPath`, and sets `KUBECONFIG` on every
 container (an existing `KUBECONFIG` env is left untouched).
 
+The Secret is deleted when the task exits, whatever the pod's outcome — success,
+failure, or a timeout — as long as cleanup is enabled (see
+`orchestration.cleanup` in the [tasks configuration](tasks-configuration.md)).
+With cleanup disabled, both the pod and the Secret are left in the cluster for
+inspection.
+
 > **Proxy note:** the mounted kubeconfig runs in-cluster, so it must **not**
 > contain a `proxy-url` pointing at a laptop-local proxy (it is unreachable from
 > the pod). Keep the kubeconfig proxy-free and pass the proxy to the tool with

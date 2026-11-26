@@ -56,3 +56,17 @@ func removePod(ctx context.Context, client k8s.Interface, namespace, name, taskN
 	}
 	output.PrintTaskProgress(taskName, "deleted pod "+pod)
 }
+
+// removeSecret deletes a Secret a task created. The secret name is printed to
+// the terminal. A delete error is printed and logged, and does not hide the
+// task result.
+func removeSecret(ctx context.Context, client k8s.Interface, namespace, name, taskName string) {
+	sec := namespace + "/" + name
+	if err := kubernetes.DeleteSecret(ctx, client, namespace, name); err != nil {
+		msg := fmt.Sprintf("failed to delete secret %s: %v", sec, err)
+		output.PrintTaskProgress(taskName, msg)
+		log.Printf("%s: %s", taskName, msg)
+		return
+	}
+	output.PrintTaskProgress(taskName, "deleted secret "+sec)
+}

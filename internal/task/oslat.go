@@ -52,8 +52,14 @@ func (t *OslatTask) Run(ctx context.Context) error {
 	}
 
 	if t.cfg.MountKubeconfig {
-		if err := t.injectKubeconfig(ctx, client, pod); err != nil {
+		secretName, err := t.injectKubeconfig(ctx, client, pod)
+		if err != nil {
 			return fmt.Errorf("%s: %w", t.Name(), err)
+		}
+		// Registered before CreatePod so the Secret is deleted on every exit
+		// path — including a failed pod creation — whenever cleanup is on.
+		if t.cleanup {
+			defer removeSecret(ctx, client, pod.Namespace, secretName, t.Name())
 		}
 	}
 
@@ -100,14 +106,16 @@ func (t *OslatTask) Run(ctx context.Context) error {
 // every container (init containers included). This replaces the manual
 // `oc create secret` + hand-written volume boilerplate. The mounted kubeconfig
 // must be proxy-free, since it runs in-cluster where the laptop proxy is
-// unreachable (use --proxy-url instead).
-func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, pod *corev1.Pod) error {
+// unreachable (use --proxy-url instead). It returns the created Secret's name so
+// the caller can register its cleanup. All pod-spec validation runs before the
+// Secret is created, so a rejected spec leaves nothing behind.
+func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, pod *corev1.Pod) (string, error) {
 	if t.kubeconfig == "" {
-		return fmt.Errorf("mountKubeconfig is set but --kubeconfig was not provided")
+		return "", fmt.Errorf("mountKubeconfig is set but --kubeconfig was not provided")
 	}
 	data, err := os.ReadFile(t.kubeconfig)
 	if err != nil {
-		return fmt.Errorf("failed to read kubeconfig %q: %w", t.kubeconfig, err)
+		return "", fmt.Errorf("failed to read kubeconfig %q: %w", t.kubeconfig, err)
 	}
 
 	ns := pod.Namespace
@@ -116,9 +124,6 @@ func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, 
 		pod.Namespace = ns
 	}
 	secretName := pod.Name + "-kubeconfig"
-	if err := kubernetes.CreateOrUpdateSecret(ctx, client, ns, secretName, map[string][]byte{"kubeconfig": data}); err != nil {
-		return err
-	}
 
 	mountPath := t.cfg.MountPath
 	if mountPath == "" {
@@ -126,15 +131,19 @@ func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, 
 	}
 
 	if hasVolume(pod.Spec.Volumes, kubeconfigVolumeName) {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"volume %q already defined in the pod spec; rename it or disable mountKubeconfig",
 			kubeconfigVolumeName)
 	}
 	if hasVolumeMount(pod.Spec.Containers, kubeconfigVolumeName) ||
 		hasVolumeMount(pod.Spec.InitContainers, kubeconfigVolumeName) {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"volumeMount %q already defined in the pod spec; rename it or disable mountKubeconfig",
 			kubeconfigVolumeName)
+	}
+
+	if err := kubernetes.CreateOrUpdateSecret(ctx, client, ns, secretName, map[string][]byte{"kubeconfig": data}); err != nil {
+		return "", err
 	}
 	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 		Name: kubeconfigVolumeName,
@@ -144,7 +153,7 @@ func (t *OslatTask) injectKubeconfig(ctx context.Context, client k8s.Interface, 
 	})
 	mountKubeconfigToContainers(pod.Spec.Containers, mountPath)
 	mountKubeconfigToContainers(pod.Spec.InitContainers, mountPath)
-	return nil
+	return secretName, nil
 }
 
 // mountKubeconfigToContainers adds the kubeconfig volume mount and KUBECONFIG

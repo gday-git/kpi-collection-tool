@@ -50,6 +50,23 @@ func DeletePod(ctx context.Context, client kubernetes.Interface, namespace, name
 	return nil
 }
 
+// DeleteSecret removes the named secret. A missing secret is not an error.
+// Cancelling ctx does not cancel the delete, so a task can still remove its
+// secrets when the run is interrupted.
+func DeleteSecret(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+	err := client.CoreV1().Secrets(namespace).Delete(context.WithoutCancel(ctx), name, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to delete secret %s/%s: %w", namespace, name, err)
+	}
+	return nil
+}
+
 // CreateOrUpdateSecret creates the named secret, or updates it if it already
 // exists. Updates go through the fetched object so its ResourceVersion is
 // preserved — the API server rejects updates that omit it.

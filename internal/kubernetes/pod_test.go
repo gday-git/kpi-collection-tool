@@ -115,6 +115,23 @@ var _ = Describe("CreateOrUpdateSecret", func() {
 	})
 })
 
+var _ = Describe("DeleteSecret", func() {
+	It("deletes an existing secret", func() {
+		client := fake.NewClientset(&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "sec", Namespace: "default"},
+		})
+
+		Expect(DeleteSecret(context.Background(), client, "default", "sec")).To(Succeed())
+
+		_, err := client.CoreV1().Secrets("default").Get(context.Background(), "sec", metav1.GetOptions{})
+		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+
+	It("treats a missing secret as success", func() {
+		Expect(DeleteSecret(context.Background(), fake.NewClientset(), "default", "gone")).To(Succeed())
+	})
+})
+
 var _ = Describe("WaitForPodTerminal", func() {
 	It("returns immediately when the pod already succeeded", func() {
 		pod := &corev1.Pod{
